@@ -7,14 +7,20 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = []
+default = ["ui"]
 # The Dioxus components. Without it: the model only (no Dioxus at all).
-ui = ["dep:dioxus"]
+ui = ["dep:dioxus", "dep:futures-channel", "dep:futures-util", "dep:tracing"]
 
 [dependencies]
-dioxus = { workspace = true, optional = true, features = ["macro", "html", "signals", "hooks"] }
+dioxus = { workspace = true, optional = true, features = ["macro", "html", "signals", "hooks", "document"] }
 serde.workspace = true
 thiserror.workspace = true
+futures-channel = { version = "0.3", optional = true }
+futures-util = { version = "0.3", default-features = false, optional = true }
+tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
+# The components rendered to HTML in tests (tests/ui.rs).
+dioxus-ssr = "=0.8.0-alpha.3"
+dioxus = { workspace = true, features = ["macro", "html", "signals", "hooks", "document"] }

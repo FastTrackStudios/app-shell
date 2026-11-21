@@ -39,9 +39,18 @@ fn shares_are_made_positive_and_summing_to_one() {
         id: SplitId(10),
         axis: app_shell::Axis::Row,
         children: vec![
-            Child { node: group(11, &["a"]), share: f32::NAN },
-            Child { node: group(12, &["b"]), share: -3.0 },
-            Child { node: group(13, &["c"]), share: 0.0 },
+            Child {
+                node: group(11, &["a"]),
+                share: f32::NAN,
+            },
+            Child {
+                node: group(12, &["b"]),
+                share: -3.0,
+            },
+            Child {
+                node: group(13, &["c"]),
+                share: 0.0,
+            },
         ],
     }));
     ws.repair();
@@ -61,17 +70,32 @@ fn a_split_in_a_split_on_the_same_axis_merges_and_one_child_unwraps() {
         id: SplitId(20),
         axis: app_shell::Axis::Row,
         children: vec![
-            Child { node: group(21, &["b"]), share: 0.5 },
-            Child { node: group(22, &["c"]), share: 0.5 },
+            Child {
+                node: group(21, &["b"]),
+                share: 0.5,
+            },
+            Child {
+                node: group(22, &["c"]),
+                share: 0.5,
+            },
         ],
     });
     ws.windows[0].center = Some(Node::Split(Split {
         id: SplitId(10),
         axis: app_shell::Axis::Row,
         children: vec![
-            Child { node: group(11, &["a"]), share: 0.5 },
-            Child { node: inner, share: 0.5 },
-            Child { node: group(12, &[]), share: 0.2 },
+            Child {
+                node: group(11, &["a"]),
+                share: 0.5,
+            },
+            Child {
+                node: inner,
+                share: 0.5,
+            },
+            Child {
+                node: group(12, &[]),
+                share: 0.2,
+            },
         ],
     }));
     ws.repair();
@@ -88,7 +112,8 @@ fn a_pop_out_with_nothing_left_closes_and_the_main_window_stays() {
     let mut ws = Workspace::new();
     ws.panes = panes(&["a"]);
     ws.windows[0].center = Some(group(1, &["a"]));
-    ws.windows.push(Window::new(WindowId::new("w"), group(5, &["ghost"])));
+    ws.windows
+        .push(Window::new(WindowId::new("w"), group(5, &["ghost"])));
     ws.repair();
     assert_eq!(ws.windows.len(), 1);
 }
@@ -135,8 +160,11 @@ fn a_zoom_on_a_lone_group_or_a_group_that_went_is_dropped() {
 #[test]
 fn a_float_with_no_tabs_goes_and_a_tiny_dock_grows() {
     let mut ws = Workspace::new();
-    ws.open(Pane::new("f", "v", "f"), Target::Float(Rect::new(0.0, 0.0, 10.0, 10.0)))
-        .unwrap();
+    ws.open(
+        Pane::new("f", "v", "f"),
+        Target::Float(Rect::new(0.0, 0.0, 10.0, 10.0)),
+    )
+    .unwrap();
     ws.windows[0].docks.left.size = 3.0;
     ws.panes.clear();
     ws.repair();
@@ -153,7 +181,10 @@ fn a_layout_with_unknown_fields_and_missing_defaults_still_reads() {
     json["future_field"] = serde_json::json!(true);
     json.as_object_mut().unwrap().remove("aliases");
     json["windows"][0].as_object_mut().unwrap().remove("zoomed");
-    json["panes"][0].as_object_mut().unwrap().remove("view_state");
+    json["panes"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("view_state");
     let back: Workspace = serde_json::from_value(json).unwrap();
     assert_eq!(back.repaired(), ws);
 }

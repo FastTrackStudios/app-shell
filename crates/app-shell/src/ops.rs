@@ -445,15 +445,13 @@ impl Workspace {
         if let Some(group) = self.group_mut(loc.group) {
             group.current = loc.index;
         }
-        if let Area::Float(f) = loc.area {
-            if let Some(window) = self.windows.get_mut(loc.window) {
-                if f < window.floats.len() {
+        if let Area::Float(f) = loc.area
+            && let Some(window) = self.windows.get_mut(loc.window)
+                && f < window.floats.len() {
                     let mut float = window.floats.remove(f);
                     float.minimised = false;
                     window.floats.push(float);
                 }
-            }
-        }
         self.recent.retain(|p| p != pane);
         self.recent.insert(0, pane.clone());
         self.active = Some(pane.clone());

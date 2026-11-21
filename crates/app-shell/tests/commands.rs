@@ -51,7 +51,10 @@ fn split_moves_the_active_tab_beside_its_stack_and_focus_crosses_back() {
     assert_ne!(b.group, c.group);
     assert_eq!(ws.active, Some(id("c")));
     ws.run(Command::Focus(Direction::Left)).unwrap();
-    assert_eq!(ws.locate(ws.active.as_ref().unwrap()).unwrap().group, b.group);
+    assert_eq!(
+        ws.locate(ws.active.as_ref().unwrap()).unwrap().group,
+        b.group
+    );
     ws.run(Command::Focus(Direction::Left)).unwrap();
     assert_eq!(
         ws.run(Command::Focus(Direction::Left)).unwrap(),
@@ -155,17 +158,29 @@ fn the_default_keys_are_browser_tab_habits() {
     let k = DefaultKeymap;
     assert_eq!(k.command(&chord("Ctrl+W")), Some(Command::CloseTab));
     assert_eq!(k.command(&chord("Meta+W")), Some(Command::CloseTab));
-    assert_eq!(k.command(&chord("Ctrl+Shift+T")), Some(Command::ReopenClosed));
+    assert_eq!(
+        k.command(&chord("Ctrl+Shift+T")),
+        Some(Command::ReopenClosed)
+    );
     assert_eq!(k.command(&chord("Ctrl+Tab")), Some(Command::NextTab));
     assert_eq!(k.command(&chord("Ctrl+Shift+Tab")), Some(Command::PrevTab));
     assert_eq!(k.command(&chord("Ctrl+1")), Some(Command::GotoTab(0)));
-    assert_eq!(k.command(&chord("Ctrl+9")), Some(Command::GotoTab(usize::MAX)));
-    assert_eq!(k.command(&chord("Ctrl+\\")), Some(Command::Split(Side::Right)));
+    assert_eq!(
+        k.command(&chord("Ctrl+9")),
+        Some(Command::GotoTab(usize::MAX))
+    );
+    assert_eq!(
+        k.command(&chord("Ctrl+\\")),
+        Some(Command::Split(Side::Right))
+    );
     assert_eq!(
         k.command(&chord("Ctrl+Alt+ArrowDown")),
         Some(Command::Focus(Direction::Down))
     );
-    assert_eq!(k.command(&chord("Ctrl+Shift+E")), Some(Command::OpenSwitcher));
+    assert_eq!(
+        k.command(&chord("Ctrl+Shift+E")),
+        Some(Command::OpenSwitcher)
+    );
     assert_eq!(k.command(&chord("W")), None);
     assert_eq!(k.command(&chord("Ctrl+0")), None);
 }
@@ -184,7 +199,11 @@ fn an_apps_bindings_win_and_fall_back_to_the_defaults() {
 
 #[test]
 fn a_command_round_trips_through_serde() {
-    for cmd in [Command::Split(Side::Top), Command::GotoTab(4), Command::Focus(Direction::Right)] {
+    for cmd in [
+        Command::Split(Side::Top),
+        Command::GotoTab(4),
+        Command::Focus(Direction::Right),
+    ] {
         let json = serde_json::to_string(&cmd).unwrap();
         assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), cmd);
     }

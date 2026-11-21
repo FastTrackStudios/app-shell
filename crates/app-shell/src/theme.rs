@@ -22,7 +22,10 @@ pub const VARIABLES: &[(&str, &str)] = &[
     ("--as-accent-soft", "rgba(99, 102, 241, 0.28)"),
     ("--as-danger", "#ef4444"),
     // Sizes.
-    ("--as-font", "system-ui, -apple-system, 'Segoe UI', sans-serif"),
+    (
+        "--as-font",
+        "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    ),
     ("--as-font-size", "13px"),
     ("--as-tab-h", "34px"),
     ("--as-title-h", "36px"),
@@ -70,9 +73,7 @@ impl Theme {
     /// The defaults with [`LIGHT`]'s colours.
     #[must_use]
     pub fn light() -> Self {
-        LIGHT
-            .iter()
-            .fold(Self::dark(), |t, (k, v)| t.set(k, *v))
+        LIGHT.iter().fold(Self::dark(), |t, (k, v)| t.set(k, *v))
     }
 
     /// Sets nothing: the variables come from an ancestor the app styles.

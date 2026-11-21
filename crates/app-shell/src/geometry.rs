@@ -121,11 +121,10 @@ pub fn slides(count: usize, width: f32, spine: f32, view: f32, scroll: f32) -> V
         let natural = width.mul_add(at, -scroll);
         let x = natural.min(view - after).max(before);
         let over = out.last().is_some_and(|prev| x < prev.x + width - 0.5);
-        if over {
-            if let Some(prev) = out.last_mut() {
+        if over
+            && let Some(prev) = out.last_mut() {
                 prev.covered = true;
             }
-        }
         out.push(Slide {
             x,
             over,
