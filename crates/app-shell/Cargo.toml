@@ -1,0 +1,20 @@
+[package]
+name = "app-shell"
+description = "An app's shell for Dioxus: windows, splits, tab stacks, docking, pop-out windows and the tab switcher, as a plain serializable layout and the components that draw it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# The Dioxus components. Without it: the model only (no Dioxus at all).
+ui = ["dep:dioxus"]
+
+[dependencies]
+dioxus = { workspace = true, optional = true, features = ["macro", "html", "signals", "hooks"] }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

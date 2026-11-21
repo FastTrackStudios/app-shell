@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = ["crates/app-shell", "crates/app-shell-native"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/FastTrackStudios/app-shell"
+rust-version = "1.88"
+
+[workspace.dependencies]
+app-shell = { path = "crates/app-shell" }
+app-shell-native = { path = "crates/app-shell-native" }
+# The published alpha, so a crate on crates.io's dioxus (FastTrackStudios/drive)
+# can depend on app-shell. Architect pins dioxus by git rev: see the README.
+dioxus = { version = "=0.8.0-alpha.3", default-features = false }
+dioxus-native = { version = "=0.8.0-alpha.3", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.server-dev]
+inherits = "dev"
+
+[profile.android-dev]
+inherits = "dev"

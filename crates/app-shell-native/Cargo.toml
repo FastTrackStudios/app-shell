@@ -1,0 +1,13 @@
+[package]
+name = "app-shell-native"
+description = "app-shell's native side: pop-out OS windows and window decorations on dioxus-native (Blitz)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+app-shell.workspace = true
+dioxus = { workspace = true, features = ["macro", "html", "signals", "hooks"] }
+dioxus-native = { workspace = true, features = ["vello-hybrid", "system-fonts", "svg", "html"] }
+tracing.workspace = true

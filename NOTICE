@@ -1,0 +1,5 @@
+app-shell's layout model (the windows, splits, tab stacks, docks and floats,
+their operations and repair, the drop geometry and the switcher's model) is
+extracted from Architect's `architect-workspace` crate
+(FastTrackStudios/architect, features/workspace), licensed MIT OR Apache-2.0.
+Its copyright notice is kept in LICENSE-MIT.
