@@ -122,8 +122,8 @@ impl LayoutHub {
 }
 
 /// What a window's own frame can do: what the platform provides for a
-/// window without system decorations, drawn by the shell's title bar
-/// ([`super::TitleBar`]). In context, from `app-shell-native`.
+/// window the shell draws the title bar of ([`super::TopBar`], the
+/// traffic lights). In context, from `app-shell-native`.
 #[derive(Clone, Copy, PartialEq)]
 pub struct WindowControls {
     pub minimize: Option<Callback<()>>,
@@ -131,4 +131,10 @@ pub struct WindowControls {
     pub close: Option<Callback<()>>,
     /// Start moving the window with the pointer (a press on the title).
     pub drag: Option<Callback<()>>,
+    /// Whether the window is the key window: its lights grey when not.
+    pub focused: Option<Signal<bool>>,
+    /// The system draws the traffic lights itself (macOS, under a
+    /// transparent title bar): the shell keeps this many points clear at
+    /// the row's left instead of drawing its own.
+    pub system_lights: Option<f32>,
 }

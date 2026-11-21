@@ -7,7 +7,9 @@ use std::cell::RefCell;
 use dioxus::prelude::*;
 
 use super::shell::{Gesture, Shell, Zone, use_shell};
-use super::{AppShell, FormFactor, TabCtx, TabKind, TabKinds};
+use super::{
+    AppShell, FormFactor, Sidebar, SidebarItem, SidebarState, TabCtx, TabKind, TabKinds, Tabs,
+};
 use crate::model::{Axis, Node, Pane, PaneId, Side, Workspace};
 use crate::ops::{Dest, Target};
 
@@ -18,6 +20,7 @@ thread_local! {
     static SCRIPT: RefCell<Option<Script>> = RefCell::new(None);
     static AFTER: RefCell<Option<Workspace>> = const { RefCell::new(None) };
     static TOLD: RefCell<usize> = const { RefCell::new(0) };
+    static SIDEBAR: RefCell<Vec<SidebarState>> = const { RefCell::new(Vec::new()) };
 }
 
 #[allow(non_snake_case)]
@@ -38,8 +41,11 @@ fn Harness(start: Workspace) -> Element {
         AppShell {
             layout,
             kinds,
+            tabs: Tabs::On,
             form: FormFactor::Desktop,
             on_change: move |_| TOLD.with(|t| *t.borrow_mut() += 1),
+            sidebar: rsx! { Sidebar { SidebarItem { label: "Home" } } },
+            on_sidebar: move |state| SIDEBAR.with(|s| s.borrow_mut().push(state)),
         }
     }
 }
@@ -231,4 +237,46 @@ fn a_dock_edge_dragged_resizes_the_dock() {
         s.released((700.0, 0.0));
     });
     assert_eq!(after.windows[0].docks.right.size, 420.0);
+}
+
+#[test]
+fn the_sidebar_edge_dragged_resizes_it_within_bounds_and_tells_the_app() {
+    SIDEBAR.with(|s| s.borrow_mut().clear());
+    let (_, told) = run(tabs(&["a"]), |s| {
+        let mut g = s.gesture;
+        g.set(Some(Gesture::Sidebar {
+            start: (220.0, 10.0),
+            width: 220.0,
+        }));
+        s.moved((300.0, 10.0));
+        assert!((*s.sidebar_w.peek() - 300.0).abs() < 0.01);
+        s.moved((2000.0, 10.0));
+        assert!(
+            (*s.sidebar_w.peek() - super::SIDEBAR_MAX).abs() < 0.01,
+            "kept to its widest"
+        );
+        s.released((2000.0, 10.0));
+    });
+    assert_eq!(told, 0, "the layout did not change");
+    let heard = SIDEBAR.with(|s| s.borrow().clone());
+    assert_eq!(
+        heard,
+        vec![SidebarState {
+            open: true,
+            width: super::SIDEBAR_MAX
+        }]
+    );
+}
+
+#[test]
+fn toggle_sidebar_hides_and_shows_it_on_a_desktop() {
+    SIDEBAR.with(|s| s.borrow_mut().clear());
+    run(tabs(&["a"]), |s| {
+        s.command(crate::Command::ToggleSidebar);
+        assert!(!*s.sidebar_open.peek());
+        s.command(crate::Command::ToggleSidebar);
+        assert!(*s.sidebar_open.peek());
+    });
+    let heard = SIDEBAR.with(|s| s.borrow().iter().map(|x| x.open).collect::<Vec<_>>());
+    assert_eq!(heard, vec![false, true]);
 }

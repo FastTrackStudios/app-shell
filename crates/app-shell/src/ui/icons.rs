@@ -81,3 +81,40 @@ pub fn IconView(icon: Icon, #[props(default = 14.0)] size: f32, color: Option<St
         }
     }
 }
+
+pub const CHEVRON_DOWN: Icon = Icon(&["m6 9 6 6 6-6"]);
+pub const CHEVRON_RIGHT: Icon = Icon(&["m9 18 6-6-6-6"]);
+pub const CHEVRONS_UP_DOWN: Icon = Icon(&["m7 15 5 5 5-5", "m7 9 5-5 5 5"]);
+pub const ARROW_LEFT: Icon = Icon(&["m12 19-7-7 7-7", "M19 12H5"]);
+pub const ARROW_RIGHT: Icon = Icon(&["M5 12h14", "m12 5 7 7-7 7"]);
+pub const MENU: Icon = Icon(&["M4 12h16", "M4 6h16", "M4 18h16"]);
+pub const SEARCH: Icon = Icon(&["M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0z", "m21 21-4.3-4.3"]);
+pub const GRID: Icon = Icon(&[
+    "M3 3h7v7H3z",
+    "M14 3h7v7h-7z",
+    "M14 14h7v7h-7z",
+    "M3 14h7v7H3z",
+]);
+pub const LIST: Icon = Icon(&[
+    "M8 6h13",
+    "M8 12h13",
+    "M8 18h13",
+    "M3 6h.01",
+    "M3 12h.01",
+    "M3 18h.01",
+]);
+pub const HOME: Icon = Icon(&[
+    "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8",
+    "M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+]);
+pub const FOLDER: Icon = Icon(&[
+    "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z",
+]);
+pub const TAG: Icon = Icon(&[
+    "M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z",
+    "M7.5 7.5h.01",
+]);
+pub const SETTINGS: Icon = Icon(&[
+    "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z",
+    "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
+]);

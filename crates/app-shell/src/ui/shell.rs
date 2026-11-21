@@ -5,13 +5,14 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
+use super::chrome::TopBar;
 use super::kinds::{TabKind, TabKinds};
 use super::popup::{MenuItem, Popup, PopupContent, PopupLayer};
+use super::sidebar::{DockedSidebar, DrawerSidebar, SIDEBAR_MAX, SIDEBAR_MIN, SidebarState};
 use super::stack::DragLayer;
 use super::switcher::Switcher;
-use super::title::TitleBar;
-use super::window::{InPageWindows, PhoneView, WindowBody};
-use super::windows::{HubMessage, LayoutHub, WindowControls, Windows};
+use super::window::{InPageWindows, SoloView, WindowBody};
+use super::windows::{HubMessage, LayoutHub, Windows};
 use crate::commands::{Command, DefaultKeymap, KeyChord, Keymap, Ran};
 use crate::model::{Axis, GroupId, Pane, PaneId, Rect, Side, SplitId, WindowId, Workspace};
 use crate::ops::{Dest, Target, WorkspaceError};
@@ -36,6 +37,24 @@ impl FormFactor {
             Self::Desktop
         }
     }
+}
+
+/// Whether the shell draws tabs.
+///
+/// Tabs are opt-in: by default a window is one content area with no tab
+/// bar, no drop zones and no switcher.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tabs {
+    /// One content area: the shell's `children`, or (with a `layout`) the
+    /// layout's active tab, alone. Tab keys do nothing.
+    #[default]
+    Off,
+    /// One content area while the layout is simple ([`Workspace::is_simple`]):
+    /// the tab chrome appears once the app opens a second tab, a split, a
+    /// dock, a float or a pop-out, and goes when it is simple again.
+    Auto,
+    /// Tab bars, splits, docks, floats, pop-outs and the switcher.
+    On,
 }
 
 /// The app's [`Keymap`], as a prop (compared by identity).
@@ -93,6 +112,8 @@ pub(crate) enum Gesture {
         start: (f64, f64),
         rect: Rect,
     },
+    /// The docked sidebar's edge dragged.
+    Sidebar { start: (f64, f64), width: f32 },
     /// A pop-out drawn in the page, moved by its title bar.
     Window {
         window: WindowId,
@@ -128,6 +149,7 @@ struct Hooks {
     on_change: Option<EventHandler<Workspace>>,
     on_command: Option<Callback<Command, bool>>,
     on_new_tab: Option<EventHandler<GroupId>>,
+    on_sidebar: Option<EventHandler<SidebarState>>,
     kinds: TabKinds,
     keymap: KeymapHandle,
     hub: Option<LayoutHub>,
@@ -149,6 +171,15 @@ pub struct Shell {
     pub(crate) hit: CopyValue<bool>,
     pub(crate) switcher: Signal<bool>,
     pub(crate) popup: Signal<Option<Popup>>,
+    /// Whether tabs are drawn: the app's mode.
+    pub(crate) tabs: Signal<Tabs>,
+    /// Whether the app gave a sidebar.
+    pub(crate) sidebar_given: Signal<bool>,
+    /// The docked sidebar: shown, and its width.
+    pub(crate) sidebar_open: Signal<bool>,
+    pub(crate) sidebar_w: Signal<f32>,
+    /// The phone's drawer is out.
+    pub(crate) drawer: Signal<bool>,
     hooks: CopyValue<Hooks>,
 }
 
@@ -216,6 +247,19 @@ impl Shell {
         if on_command.is_some_and(|f| f.call(command)) {
             return;
         }
+        if command == Command::ToggleSidebar {
+            if self.has_sidebar() {
+                if self.form() == FormFactor::Phone {
+                    let out = *self.drawer.peek();
+                    self.set_drawer(!out);
+                } else {
+                    let open = *self.sidebar_open.peek();
+                    let width = *self.sidebar_w.peek();
+                    self.set_sidebar(SidebarState { open: !open, width });
+                }
+            }
+            return;
+        }
         let mut layout = self.layout;
         let mut next = layout.peek().clone();
         match next.run(command) {
@@ -267,6 +311,48 @@ impl Shell {
         }
     }
 
+    /// Whether the app gave a sidebar.
+    #[must_use]
+    pub fn has_sidebar(&self) -> bool {
+        *self.sidebar_given.read()
+    }
+
+    /// Whether the window draws tabs now ([`Tabs`]).
+    #[must_use]
+    pub fn tabs_shown(&self) -> bool {
+        match *self.tabs.read() {
+            Tabs::Off => false,
+            Tabs::On => true,
+            Tabs::Auto => !self.layout.read().is_simple(),
+        }
+    }
+
+    /// Open or close the phone's sidebar drawer.
+    pub fn set_drawer(&self, out: bool) {
+        let mut drawer = self.drawer;
+        if *drawer.peek() != out {
+            drawer.set(out);
+        }
+    }
+
+    /// Show, hide or resize the docked sidebar, telling the app.
+    pub fn set_sidebar(&self, state: SidebarState) {
+        let width = state.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
+        let (mut open, mut w) = (self.sidebar_open, self.sidebar_w);
+        if *open.peek() != state.open {
+            open.set(state.open);
+        }
+        if (*w.peek() - width).abs() > f32::EPSILON {
+            w.set(width);
+        }
+        if let Some(f) = self.hooks.peek().on_sidebar {
+            f.call(SidebarState {
+                open: state.open,
+                width,
+            });
+        }
+    }
+
     /// The kind a pane names, if the app registered it.
     #[must_use]
     pub fn kind(&self, id: &str) -> Option<TabKind> {
@@ -315,12 +401,14 @@ impl Shell {
 
     fn key(&self, chord: &KeyChord) -> bool {
         let keymap = self.hooks.peek().keymap.clone();
+        let tabs = self.tabs_shown();
         match keymap.0.command(chord) {
-            Some(command) => {
+            // Without tabs, only the commands that are not about tabs.
+            Some(command) if tabs || command == Command::ToggleSidebar => {
                 self.command(command);
                 true
             }
-            None => false,
+            _ => false,
         }
     }
 
@@ -367,6 +455,11 @@ impl Shell {
                     Side::Bottom | Side::Top => start.1 - at.1,
                 };
                 self.apply_quiet(|w| w.set_dock_size(side, size + narrow(delta)));
+            }
+            Some(Gesture::Sidebar { start, width }) => {
+                let next = (width + narrow(at.0 - start.0)).clamp(SIDEBAR_MIN, SIDEBAR_MAX);
+                let mut w = self.sidebar_w;
+                w.set(next);
             }
             Some(Gesture::Float { pane, start, rect }) => {
                 let moved = Rect::new(
@@ -429,6 +522,10 @@ impl Shell {
                 }
             }
             Gesture::Tab { .. } => {}
+            Gesture::Sidebar { .. } => {
+                let width = *self.sidebar_w.peek();
+                self.set_sidebar(SidebarState { open: true, width });
+            }
             _ => self.changed(),
         }
     }
@@ -468,6 +565,9 @@ pub const SHELL_CSS: &str = r"
 .as-x:hover { opacity: 1; background-color: var(--as-raised); }
 .as-item:hover { background-color: var(--as-accent-soft); }
 .as-divider:hover { background-color: var(--as-accent); }
+.as-lights .as-glyph { opacity: 0; }
+.as-lights:hover .as-glyph { opacity: 1; }
+.as-search:focus-within { border-color: var(--as-accent); }
 ";
 
 /// The shell's sheet, in a component of its own that never changes.
@@ -476,20 +576,29 @@ fn ShellStyle() -> Element {
     rsx! { document::Style { {SHELL_CSS} } }
 }
 
-/// One window of a layout, its tabs drawn by the app's kinds.
+/// An app's window: a top bar, an optional sidebar, and one content area,
+/// or (when the app turns tabs on) tab stacks, splits, docks and pop-outs.
 ///
-/// The app owns the layout: `layout` is its signal, and `on_change` hears
-/// every change the shell makes (save it wherever you like). Keys go
-/// through `keymap` (the [`DefaultKeymap`] when unset) to commands, which
-/// `on_command` hears first.
+/// The simplest app passes nothing but its content as children:
+/// `AppShell { title: "Notes", MyPage {} }`. Tabs are opt-in ([`Tabs`]):
+/// give a `layout` (the app's `Signal<Workspace>`) and `kinds`, and set
+/// `tabs`. `on_change` hears every change the shell makes to the layout
+/// (save it wherever you like). Keys go through `keymap` (the
+/// [`DefaultKeymap`] when unset) to commands, which `on_command` hears
+/// first.
 ///
 /// The shell fills its parent: give it a sized parent (the window), and
 /// put nothing under it that should take the pointer during a drag.
 #[allow(clippy::too_many_arguments)]
 #[component]
 pub fn AppShell(
-    layout: Signal<Workspace>,
-    kinds: TabKinds,
+    /// The layout: the app's signal. Without one the shell keeps its own
+    /// (one empty area) and draws `children`.
+    layout: Option<Signal<Workspace>>,
+    #[props(default)] kinds: TabKinds,
+    /// Whether tabs are drawn (off by default).
+    #[props(default)]
+    tabs: Tabs,
     on_change: Option<EventHandler<Workspace>>,
     on_command: Option<Callback<Command, bool>>,
     /// "New tab" buttons on the tab bars, asking the app to open one in
@@ -502,24 +611,37 @@ pub fn AppShell(
     #[props(default)] keymap: KeymapHandle,
     /// Desktop or phone; measured from the shell's width when unset.
     form: Option<FormFactor>,
-    /// The title bar's title (with `decorations`).
+    /// The top bar's title (the default top bar's).
     title: Option<String>,
-    /// Draw the window's title bar (and its buttons, where the platform
-    /// provides [`WindowControls`]). On by default where it does.
-    decorations: Option<bool>,
+    /// The top bar, when the app fills its slots ([`TopBar`]). Pass an
+    /// empty `rsx! {}` for none.
+    top_bar: Option<Element>,
+    /// The sidebar's content ([`super::Sidebar`]): docked at the left on
+    /// a desktop, a drawer on a phone.
+    sidebar: Option<Element>,
+    /// The sidebar's state to start with.
+    sidebar_state: Option<SidebarState>,
+    /// Hears the sidebar shown, hidden or resized (to keep it).
+    on_sidebar: Option<EventHandler<SidebarState>>,
+    /// The content area, without a `layout` or with tabs off.
+    children: Element,
 ) -> Element {
-    let controls = try_use_context::<WindowControls>();
     let windows = try_use_context::<Windows>();
     let hub = try_use_context::<LayoutHub>();
+    let own_layout = use_signal(Workspace::new);
+    let has_layout = layout.is_some();
+    let layout = layout.unwrap_or(own_layout);
     let window_id = use_signal(|| window.clone());
     let measured = use_signal(|| None::<FormFactor>);
     let mut form_sig = use_signal(|| form.unwrap_or(FormFactor::Desktop));
+    let start = sidebar_state.unwrap_or_default();
     let hooks = use_hook(|| CopyValue::new(Hooks::default()));
     let mut hooks_w = hooks;
     *hooks_w.write() = Hooks {
         on_change,
         on_command,
         on_new_tab,
+        on_sidebar,
         kinds,
         keymap,
         hub: hub.clone(),
@@ -533,11 +655,23 @@ pub fn AppShell(
         hit: CopyValue::new(false),
         switcher: Signal::new(false),
         popup: Signal::new(None),
+        tabs: Signal::new(tabs),
+        sidebar_given: Signal::new(sidebar.is_some()),
+        sidebar_open: Signal::new(start.open),
+        sidebar_w: Signal::new(start.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX)),
+        drawer: Signal::new(false),
         hooks,
     });
     let want = form.or(*measured.read()).unwrap_or(FormFactor::Desktop);
     if *form_sig.peek() != want {
         form_sig.set(want);
+    }
+    let (mut tabs_sig, mut given) = (shell.tabs, shell.sidebar_given);
+    if *tabs_sig.peek() != tabs {
+        tabs_sig.set(tabs);
+    }
+    if *given.peek() != sidebar.is_some() {
+        given.set(sidebar.is_some());
     }
 
     // The other windows' changes, and what the platform did to pop-outs.
@@ -608,24 +742,29 @@ pub fn AppShell(
         opened.set(want.into_iter().map(|(w, _, _)| w).collect());
     });
 
-    let decorations = decorations.unwrap_or(controls.is_some());
     let in_page = is_main && windows.is_none();
     let form_now = *form_sig.read();
-    let switcher = *shell.switcher.read();
+    let phone = form_now == FormFactor::Phone;
+    let tabs_now = shell.tabs_shown();
+    let switcher = *shell.switcher.read() && tabs_now;
+    let docked = !phone && sidebar.is_some() && *shell.sidebar_open.read();
+    let drawer = phone && sidebar.is_some() && *shell.drawer.read();
     let style = format!(
-        "{} position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; \
+        "{} position: relative; width: 100%; height: 100%; display: flex; flex-direction: row; \
          overflow: hidden; background-color: var(--as-bg); color: var(--as-text); \
          font-family: var(--as-font); font-size: var(--as-font-size); outline: none; \
          user-select: none; box-sizing: border-box;",
         theme.style()
     );
     let window_for_body = window.clone();
+    let top = top_bar.unwrap_or_else(|| rsx! { TopBar { title: title.clone() } });
     rsx! {
         ShellStyle {}
         div {
             class: "app-shell",
             "data-window": "{window.0}",
-            "data-form": if form_now == FormFactor::Phone { "phone" } else { "desktop" },
+            "data-form": if phone { "phone" } else { "desktop" },
+            "data-tabs": "{tabs_now}",
             style: "{style}",
             tabindex: 0,
             onmounted: move |event| {
@@ -647,6 +786,7 @@ pub fn AppShell(
                 if event.key().to_string() == "Escape" {
                     shell.close_popup();
                     shell.show_switcher(false);
+                    shell.set_drawer(false);
                 }
             },
             onpointermove: move |event| {
@@ -657,18 +797,41 @@ pub fn AppShell(
                 let p = event.client_coordinates();
                 shell.released((p.x, p.y));
             },
-            if decorations {
-                TitleBar { title: title.clone().unwrap_or_default() }
+            if docked {
+                if let Some(content) = sidebar.clone() {
+                    DockedSidebar { content }
+                }
             }
             div {
-                style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; overflow: hidden;",
-                if form_now == FormFactor::Phone {
-                    PhoneView { window: window_for_body.clone() }
-                } else {
-                    WindowBody { window: window_for_body.clone() }
+                class: "as-main",
+                style: "position: relative; flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column;",
+                {top}
+                div {
+                    class: "as-body",
+                    style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; overflow: hidden;",
+                    if !tabs_now {
+                        if has_layout {
+                            SoloView { window: window_for_body.clone() }
+                        } else {
+                            div {
+                                class: "as-content",
+                                style: "flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;",
+                                {children}
+                            }
+                        }
+                    } else if phone {
+                        SoloView { window: window_for_body.clone() }
+                    } else {
+                        WindowBody { window: window_for_body.clone() }
+                    }
+                    if in_page && tabs_now && !phone {
+                        InPageWindows {}
+                    }
                 }
-                if in_page && form_now == FormFactor::Desktop {
-                    InPageWindows {}
+            }
+            if drawer {
+                if let Some(content) = sidebar.clone() {
+                    DrawerSidebar { content }
                 }
             }
             DragLayer {}

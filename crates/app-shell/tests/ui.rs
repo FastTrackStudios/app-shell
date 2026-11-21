@@ -6,7 +6,11 @@
 
 use std::cell::RefCell;
 
-use app_shell::ui::{AppShell, FormFactor, TabCtx, TabKind, TabKinds, use_shell};
+use app_shell::ui::{
+    AppShell, FormFactor, SearchField, Sidebar, SidebarItem, SidebarSection, SidebarSwitcher,
+    TabCtx, TabKind, TabKinds, Tabs, ToolbarButton, ToolbarGroup, TopBar, WindowControls, icons,
+    use_shell,
+};
 use app_shell::{Command, Pane, PaneId, Rect, Side, Target, WindowId, Workspace};
 use dioxus::prelude::*;
 
@@ -48,6 +52,7 @@ fn Harness(props: Lab) -> Element {
         AppShell {
             layout,
             kinds: kinds(),
+            tabs: Tabs::On,
             form: props.form,
             window: props.window.clone(),
             on_change: move |w: Workspace| CHANGES.with(|c| c.borrow_mut().push(w)),
@@ -195,6 +200,10 @@ fn a_phone_shows_the_active_tab_alone_and_counts_the_tabs() {
     assert!(!html.contains("as-tabbar"), "no tab bars on a phone");
     assert!(html.contains("class=\"as-hov as-tabs-button\""));
     assert!(html.contains(">2</div>"), "the count");
+    assert!(
+        html.contains("Note b</span>"),
+        "the bar titled with the tab on show"
+    );
 }
 
 fn acting(cmd: Command, tabs: &[&str]) -> (Workspace, String) {
@@ -241,4 +250,250 @@ fn the_switcher_shows_every_tab_of_the_place_as_a_card() {
 fn moving_a_tab_to_a_new_window_draws_it_there() {
     let (_, html) = acting(Command::MoveToNewWindow, &["a"]);
     assert_eq!(count(&html, "class=\"as-inpage-window\""), 1);
+}
+
+// Tabs are opt-in, the chrome and the sidebar.
+
+fn render_app(app: fn() -> Element) -> String {
+    let mut dom = VirtualDom::new(app);
+    dom.rebuild_in_place();
+    for _ in 0..4 {
+        dom.process_events();
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+    }
+    dioxus_ssr::render(&dom)
+}
+
+#[test]
+fn by_default_the_shell_is_one_content_area_with_nothing_about_tabs() {
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Notes", form: FormFactor::Desktop,
+                p { class: "page", "hello" }
+            }
+        }
+    });
+    assert!(html.contains("<p class=\"page\">hello</p>"));
+    assert!(html.contains("class=\"as-topbar-title\""));
+    assert!(html.contains(">Notes</span>"));
+    assert!(html.contains("data-tabs=\"false\""));
+    for tabby in [
+        "as-tabbar",
+        "as-stack",
+        "as-tab ",
+        "as-switcher-button",
+        "as-drop-zones",
+        "as-tabs-button",
+    ] {
+        assert!(!html.contains(tabby), "{tabby} drawn without tabs");
+    }
+    assert!(
+        !html.contains("as-lights"),
+        "no window buttons in a browser"
+    );
+    assert!(!html.contains("data-sidebar"), "no sidebar unless given");
+}
+
+#[test]
+fn tabs_off_shows_the_layouts_active_tab_alone() {
+    let mut ws = Workspace::new();
+    for p in ["a", "b", "c"] {
+        ws.open(note(p), Target::Tab).unwrap();
+    }
+    ws.activate(&PaneId::new("b")).unwrap();
+    #[component]
+    fn Off(start: Workspace) -> Element {
+        let layout = use_signal(|| start.clone());
+        rsx! { AppShell { layout, kinds: kinds(), form: FormFactor::Desktop } }
+    }
+    let mut dom = VirtualDom::new_with_props(Off, OffProps { start: ws });
+    dom.rebuild_in_place();
+    let html = dioxus_ssr::render(&dom);
+    assert!(html.contains("note Note b"));
+    assert!(!html.contains("note Note a") && !html.contains("as-tabbar"));
+}
+
+#[component]
+fn AutoShell(start: Workspace) -> Element {
+    let layout = use_signal(|| start.clone());
+    rsx! { AppShell { layout, kinds: kinds(), tabs: Tabs::Auto, form: FormFactor::Desktop } }
+}
+
+fn render_auto(ws: Workspace) -> String {
+    let mut dom = VirtualDom::new_with_props(AutoShell, AutoShellProps { start: ws });
+    dom.rebuild_in_place();
+    dioxus_ssr::render(&dom)
+}
+
+#[test]
+fn tabs_auto_appear_with_a_second_tab_and_not_before() {
+    let mut ws = Workspace::new();
+    ws.open(note("a"), Target::Tab).unwrap();
+    let one = render_auto(ws.clone());
+    assert!(one.contains("note Note a") && !one.contains("as-tabbar"));
+    assert!(one.contains("data-tabs=\"false\""));
+    ws.open(note("b"), Target::Tab).unwrap();
+    let two = render_auto(ws);
+    assert!(two.contains("as-tabbar") && two.contains("data-tabs=\"true\""));
+    assert!(two.contains("as-switcher-button"));
+}
+
+fn controls(focused: bool, system: Option<f32>) -> WindowControls {
+    WindowControls {
+        minimize: Some(Callback::new(|()| {})),
+        toggle_maximize: Some(Callback::new(|()| {})),
+        close: Some(Callback::new(|()| {})),
+        drag: Some(Callback::new(|()| {})),
+        focused: Some(Signal::new(focused)),
+        system_lights: system,
+    }
+}
+
+#[derive(Props, Clone, PartialEq)]
+struct Framed {
+    focused: bool,
+    system: Option<f32>,
+    with_sidebar: bool,
+}
+
+#[allow(non_snake_case)]
+fn FramedShell(props: Framed) -> Element {
+    let c = use_hook(|| controls(props.focused, props.system));
+    use_context_provider(|| c);
+    let sidebar = props.with_sidebar.then(|| {
+        rsx! {
+            Sidebar {
+                header: rsx! { SidebarSwitcher { title: "Library", detail: "3 locations" } },
+                footer: rsx! { SidebarItem { label: "Settings", icon: icons::SETTINGS } },
+                SidebarSection { title: "Library",
+                    SidebarItem { label: "Overview", icon: icons::HOME, selected: true }
+                    SidebarItem { label: "Recents", icon: icons::FOLDER, badge: "12" }
+                }
+                SidebarSection { title: "Tags", open: false,
+                    SidebarItem { label: "Hidden tag" }
+                }
+            }
+        }
+    });
+    rsx! {
+        AppShell { title: "Files", form: FormFactor::Desktop, sidebar,
+            p { "body" }
+        }
+    }
+}
+
+fn render_framed(focused: bool, system: Option<f32>, with_sidebar: bool) -> String {
+    let mut dom = VirtualDom::new_with_props(
+        FramedShell,
+        Framed {
+            focused,
+            system,
+            with_sidebar,
+        },
+    );
+    dom.rebuild_in_place();
+    dioxus_ssr::render(&dom)
+}
+
+#[test]
+fn a_framed_window_draws_traffic_lights_grey_when_not_focused() {
+    let html = render_framed(true, None, false);
+    assert!(html.contains("class=\"as-lights\""));
+    for b in ["Close", "Minimise", "Zoom"] {
+        assert!(html.contains(&format!("aria-label=\"{b}\"")), "{b}");
+    }
+    assert!(html.contains("var(--as-light-close)") && html.contains("data-focused=\"true\""));
+    let idle = render_framed(false, None, false);
+    assert!(idle.contains("data-focused=\"false\"") && !idle.contains("var(--as-light-close)"));
+    assert!(idle.contains("var(--as-light-off)"));
+}
+
+#[test]
+fn where_the_system_draws_the_lights_the_shell_keeps_their_room() {
+    let html = render_framed(true, Some(76.0), false);
+    assert!(html.contains("class=\"as-lights-room\""));
+    assert!(html.contains("width: 76px;"));
+    assert!(!html.contains("class=\"as-lights\""));
+}
+
+#[test]
+fn a_sidebar_docks_at_the_left_with_the_lights_at_its_top() {
+    let html = render_framed(true, None, true);
+    assert!(html.contains("data-sidebar=\"docked\""));
+    assert!(html.contains("width: 220px;"));
+    let sidebar_at = html.find("data-sidebar").unwrap();
+    let lights_at = html.find("class=\"as-lights\"").unwrap();
+    let bar_at = html.find("class=\"as-topbar\"").unwrap();
+    assert!(
+        sidebar_at < lights_at && lights_at < bar_at,
+        "the lights in the sidebar, not the bar"
+    );
+    assert_eq!(html.matches("class=\"as-lights\"").count(), 1);
+    assert!(html.contains("text-transform: uppercase") && html.contains(">Library</span>"));
+    assert!(html.contains("aria-current=\"page\"") && html.contains(">Overview</span>"));
+    assert!(html.contains(">12</span>"), "the badge");
+    assert!(
+        !html.contains("Hidden tag"),
+        "a folded section hides its rows"
+    );
+    assert!(html.contains("3 locations") && html.contains("class=\"as-sidebar-footer\""));
+    assert!(
+        html.contains("aria-label=\"Sidebar\""),
+        "the button that hides it"
+    );
+}
+
+#[test]
+fn on_a_phone_the_sidebar_is_a_drawer_behind_a_menu_button() {
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Files", form: FormFactor::Phone,
+                sidebar: rsx! { Sidebar { SidebarItem { label: "Overview" } } },
+                p { "body" }
+            }
+        }
+    });
+    assert!(
+        !html.contains("data-sidebar"),
+        "closed until the menu opens it"
+    );
+    assert!(html.contains("aria-label=\"Menu\""));
+    assert!(html.contains("data-form=\"phone\""));
+}
+
+#[test]
+fn the_top_bar_holds_the_apps_slots() {
+    let html = render_app(|| {
+        rsx! {
+            AppShell {
+                form: FormFactor::Desktop,
+                top_bar: rsx! {
+                    TopBar {
+                        lead: rsx! { span { class: "crumb", "Home / Photos" } },
+                        search: rsx! { SearchField { placeholder: "Search files" } },
+                        actions: rsx! {
+                            ToolbarGroup {
+                                ToolbarButton { icon: icons::GRID, label: "Grid", active: true, on_press: |_| {} }
+                                ToolbarButton { icon: icons::LIST, label: "List", on_press: |_| {} }
+                            }
+                        },
+                        on_back: |_| {},
+                        on_forward: |_| {},
+                        can_forward: false,
+                    }
+                },
+                p { "body" }
+            }
+        }
+    });
+    assert!(html.contains("Home / Photos") && html.contains("placeholder=\"Search files\""));
+    assert!(html.contains("aria-pressed=\"true\"") && html.contains("aria-label=\"List\""));
+    assert!(
+        html.contains("aria-label=\"Back\"")
+            && html.contains("aria-label=\"Forward\" aria-disabled=\"true\"")
+    );
+    assert!(
+        html.contains("grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr)"),
+        "the search centred"
+    );
 }

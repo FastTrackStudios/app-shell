@@ -4,12 +4,12 @@
 
 use dioxus::prelude::*;
 
+use super::chrome::BarButton;
 use super::icons::{self, IconView};
 use super::kinds::TabCtx;
 use super::shell::{Gesture, use_shell};
 use super::split::NodeView;
 use super::stack::{StackView, TabBody};
-use super::title::BarButton;
 use crate::model::{Dock, Float, Node, Rect, Shown, Side, Snap, WindowId};
 
 /// A window's center, docks and floats, filling its parent.
@@ -224,13 +224,13 @@ fn InPageWindow(index: usize, id: WindowId, bounds: Option<Rect>, title: String)
     }
 }
 
-/// A phone: the active tab alone, a bar over it with the tab count that
-/// opens the switcher.
+/// One tab alone, filling the area: the active tab when it is in this
+/// window, else the window's first. What a window with tabs off shows,
+/// and a phone with tabs on (the switcher reaches the others).
 #[component]
-pub fn PhoneView(window: WindowId) -> Element {
+pub fn SoloView(window: WindowId) -> Element {
     let shell = use_shell();
     let layout = shell.layout.read();
-    // The active tab when it is in this window, else this window's first.
     let in_window = |p: &crate::model::PaneId| {
         layout
             .locate(p)
@@ -248,50 +248,22 @@ pub fn PhoneView(window: WindowId) -> Element {
                 .and_then(|g| g.current_tab().cloned())
         })
         .and_then(|p| layout.pane(&p).cloned());
-    let count = layout.tab_count();
     drop(layout);
-    let title = pane
-        .as_ref()
-        .map_or_else(|| "No tabs".to_owned(), |p| p.title.clone());
-    let menu_pane = pane.as_ref().map(|p| (p.id.clone(), p.pinned));
     rsx! {
         div {
-            class: "as-phone",
-            style: "position: relative; flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column;",
-            div {
-                class: "as-phone-bar",
-                style: "flex: none; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 14px; background-color: var(--as-surface); border-bottom: 1px solid var(--as-border);",
-                span { style: "flex: 1 1 0px; min-width: 0; overflow: hidden; white-space: nowrap; font-weight: 600; font-size: 15px;", "{title}" }
-                if let Some((p, pinned)) = menu_pane {
-                    BarButton {
-                        icon: icons::MORE,
-                        label: "Tab menu",
-                        on_press: move |()| shell.menu(16.0, 48.0, super::stack::tab_menu(&p, pinned)),
+            class: "as-solo",
+            style: "position: relative; flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; overflow: hidden;",
+            match pane {
+                Some(pane) => rsx! {
+                    TabBody {
+                        key: "{pane.id.0}",
+                        kind: shell.kind(&pane.view.0),
+                        ctx: TabCtx { pane: pane.clone(), window: window.clone(), active: true },
                     }
-                }
-                div {
-                    class: "as-hov as-tabs-button",
-                    role: "button",
-                    title: "All tabs",
-                    style: "display: flex; align-items: center; justify-content: center; min-width: 30px; height: 26px; padding: 0 6px; border: 2px solid var(--as-text); border-radius: 7px; font-weight: 700; font-size: 13px; box-sizing: border-box;",
-                    onclick: move |_| shell.show_switcher(true),
-                    "{count}"
-                }
-            }
-            div {
-                style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; overflow: hidden;",
-                match pane {
-                    Some(pane) => rsx! {
-                        TabBody {
-                            key: "{pane.id.0}",
-                            kind: shell.kind(&pane.view.0),
-                            ctx: TabCtx { pane: pane.clone(), window: window.clone(), active: true },
-                        }
-                    },
-                    None => rsx! {
-                        div { style: "margin: auto; color: var(--as-muted);", "No tabs open" }
-                    },
-                }
+                },
+                None => rsx! {
+                    div { style: "margin: auto; color: var(--as-muted);", "Nothing open" }
+                },
             }
         }
     }
