@@ -83,6 +83,61 @@ layout written by an older or newer app, or edited by hand, still opens.
     hears each change so the app can keep it.
   - **Phone:** a drawer behind a menu button. Picking a row closes it.
 
+## On a phone
+
+Below 600 points wide (a browser at 390 px, a phone running the native
+build) the shell takes the phone layout by itself. In a browser it follows
+`onresize`; natively it follows the window's size from `app-shell-native`.
+
+- **The foot.** `destinations` (the app's primary places, each a
+  `Destination`: an icon over a label, with an optional badge) make a
+  floating tab pill. `destination` lights the current one, and
+  `on_destination` hears a tap. `action` (a `PrimaryAction`) is the round
+  button beside it (Upload, New, Play). `accessory` docks over them: Now
+  Playing, a transport, an upload's progress. On a desktop only the
+  accessory shows, docked under the content, because the sidebar holds the
+  destinations.
+- **Safe areas.** The foot and the top bar keep clear of the notch and the
+  home indicator with `env(safe-area-inset-*)`. Each is written after a
+  plain value, so a renderer that can't read `env()` keeps the plain one.
+  Blitz already keeps its viewport inside the safe area. A web app needs
+  `viewport-fit=cover` in its viewport meta for the browser to report the
+  insets.
+- **The drawer.** The same `sidebar` that docks on a desktop is a drawer
+  on a phone. It slides in under a finger from the left edge (or the top
+  bar's menu button) and is dragged back shut. It settles by a flick or by
+  where it is let go, and a tap on the scrim closes it. A vertical move
+  from the edge stays the page's scroll.
+- **Sheets.** `Shell::open_sheet(SheetSpec::new(|()| rsx! { … }))`,
+  `use_sheet()` (sheets that close with the component that opened them),
+  or the declarative `Sheet { open, render, on_close }`.
+  - On a phone each is a bottom sheet with a handle. It can be dragged
+    between detents (`Detent::Fit`, `Medium`, `Large`) or down and away,
+    and its body scrolls. Sheets stack, the lower ones set back.
+  - On a desktop the same sheet is a centred panel.
+  - A sheet's content renders at the shell's root: context provided only
+    where it was opened isn't there, so capture what it needs.
+- **Menus** (`Shell::menu`) are popups on a desktop and action sheets on a
+  phone.
+- **The command palette.** The `palette` prop lists its entries
+  (`PaletteItem`). Mod+K, `Command::OpenPalette` or `Shell::open_palette`
+  opens it: a large sheet on a phone, near the top on a desktop. It ranks
+  label prefixes, then word starts, then keywords.
+- **Toasts.** `Shell::toast("Uploaded")` or `Shell::show_toast(ToastSpec)`
+  (with an action such as Undo) queue one at a time: under the notch on a
+  phone, at the foot on a desktop.
+- **The top bar** is compact on a phone: the menu button, back, the title,
+  and `phone_actions` (one or two) in place of `actions`. The search gets
+  a row of its own.
+- **Tabs**, when the app turns them on, keep the switcher on a phone.
+- **Swipeable** pages its content: left and right (next and previous) and
+  down (close), the content following the finger. It's what Quick Look
+  needs.
+
+The arithmetic behind all this (`app_shell::gestures`: the layout
+threshold, the drawer's width, progress and settling, sheet detents,
+swipe direction, palette ranking) is plain functions with tests.
+
 ## The seams your app owns
 
 - **Storage.** You pass a `Signal<Workspace>` and an `on_change`. Save the

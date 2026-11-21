@@ -483,6 +483,10 @@ impl Shell {
 
     /// Open or close the phone's sidebar drawer.
     pub fn set_drawer(&self, out: bool) {
+        if out {
+            let mut dragged = self.drawer_dragged;
+            dragged.set(false);
+        }
         let mut drawer = self.drawer;
         if *drawer.peek() != out {
             drawer.set(out);

@@ -98,6 +98,9 @@ pub(crate) fn DrawerSidebar(content: Element) -> Element {
     };
     let pad = super::foot::top_pad(8.0);
     let grab = move |event: PointerEvent| {
+        // A new press: whether it drags is this press's to say.
+        let mut dragged = shell.drawer_dragged;
+        dragged.set(false);
         if !*shell.drawer.peek() {
             return;
         }
@@ -128,7 +131,10 @@ pub(crate) fn DrawerSidebar(content: Element) -> Element {
             div {
                 class: "as-sidebar",
                 "data-sidebar": "drawer",
-                style: "position: absolute; left: 0; top: 0; bottom: 0; width: {w}px; transform: translateX({x}px); transition: {transition}; pointer-events: {events}; box-shadow: 8px 0 32px rgba(0, 0, 0, 0.4); {PANEL} {pad}",
+                // An opaque base under the panel's translucent colour: over
+                // the page a drawer must not show it through (a browser
+                // blurs it; Blitz cannot).
+                style: "position: absolute; left: 0; top: 0; bottom: 0; width: {w}px; transform: translateX({x}px); transition: {transition}; pointer-events: {events}; box-shadow: 8px 0 32px rgba(0, 0, 0, 0.4); {PANEL} background-image: linear-gradient(var(--as-sidebar-bg), var(--as-sidebar-bg)); background-color: var(--as-bg); {pad}",
                 onpointerdown: grab,
                 div {
                     style: "flex: none; height: 36px; display: flex; align-items: center; justify-content: flex-end; padding: 0 6px;",
