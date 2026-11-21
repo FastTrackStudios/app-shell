@@ -732,6 +732,22 @@ impl Workspace {
         self.windows.iter().find(|w| &w.id == id)
     }
 
+    /// Whether the layout is one content area: at most one tab, in the
+    /// main window's center, with no split, dock, float or pop-out. What
+    /// a shell in `Tabs::Auto` draws without any tab chrome.
+    #[must_use]
+    pub fn is_simple(&self) -> bool {
+        let [main] = self.windows.as_slice() else {
+            return false;
+        };
+        self.panes.len() <= 1
+            && matches!(main.center, Some(Node::Group(_)))
+            && main.floats.is_empty()
+            && Docks::SIDES
+                .iter()
+                .all(|&s| main.docks.get(s).is_none_or(|d| d.root.is_none()))
+    }
+
     /// Whether `other` is arranged the same: the same windows, panes,
     /// focus and closed panes, whatever ids each would hand out next and
     /// whatever aliases each keeps.

@@ -28,8 +28,26 @@ pub const VARIABLES: &[(&str, &str)] = &[
     ),
     ("--as-font-size", "13px"),
     ("--as-tab-h", "34px"),
-    ("--as-title-h", "36px"),
     ("--as-radius", "6px"),
+    // The top bar: the window's title strip, the traffic lights centred
+    // in it (`TOP_BAR_H` in code: the native side places macOS's own
+    // lights in a row this tall).
+    ("--as-topbar-h", "44px"),
+    ("--as-topbar-bg", "#18181b"),
+    // The sidebar: a panel a shade apart, translucent where the renderer
+    // blurs what is behind it (a browser; Blitz draws the colour).
+    ("--as-sidebar-bg", "rgba(28, 28, 32, 0.92)"),
+    ("--as-sidebar-blur", "blur(24px) saturate(160%)"),
+    ("--as-selected", "rgba(255, 255, 255, 0.08)"),
+    ("--as-selected-text", "#ffffff"),
+    ("--as-heading", "#71717a"),
+    // The traffic lights, and their colour in a window that is not the
+    // key window.
+    ("--as-light-close", "#ff5f57"),
+    ("--as-light-min", "#febc2e"),
+    ("--as-light-zoom", "#28c840"),
+    ("--as-light-off", "#4a4a50"),
+    ("--as-search-bg", "rgba(255, 255, 255, 0.06)"),
 ];
 
 /// The light theme's colours (the sizes are the defaults').
@@ -44,6 +62,13 @@ pub const LIGHT: &[(&str, &str)] = &[
     ("--as-accent", "#4f46e5"),
     ("--as-accent-soft", "rgba(79, 70, 229, 0.18)"),
     ("--as-danger", "#dc2626"),
+    ("--as-topbar-bg", "#fafafa"),
+    ("--as-sidebar-bg", "rgba(244, 244, 245, 0.92)"),
+    ("--as-selected", "rgba(0, 0, 0, 0.07)"),
+    ("--as-selected-text", "#09090b"),
+    ("--as-heading", "#a1a1aa"),
+    ("--as-light-off", "#d4d4d8"),
+    ("--as-search-bg", "rgba(0, 0, 0, 0.05)"),
 ];
 
 /// The values the shell's root sets.

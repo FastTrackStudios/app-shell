@@ -43,6 +43,8 @@ pub enum Command {
     ToggleDock(Side),
     /// Open the tab switcher (the UI's; the layout does not change).
     OpenSwitcher,
+    /// Show or hide the sidebar (the UI's; the layout does not change).
+    ToggleSidebar,
 }
 
 impl Command {
@@ -72,6 +74,7 @@ impl Command {
             Self::ToggleDock(Side::Right) => "Toggle right dock".into(),
             Self::ToggleDock(_) => "Toggle bottom dock".into(),
             Self::OpenSwitcher => "Show all tabs".into(),
+            Self::ToggleSidebar => "Toggle sidebar".into(),
         }
     }
 }
@@ -83,7 +86,8 @@ pub enum Ran {
     Changed,
     /// Nothing to do (no active tab, already there).
     Nothing,
-    /// A command for the UI, not the layout ([`Command::OpenSwitcher`]).
+    /// A command for the UI, not the layout ([`Command::OpenSwitcher`],
+    /// [`Command::ToggleSidebar`]).
     Ui,
 }
 
@@ -93,7 +97,7 @@ impl Workspace {
         let before = self.clone();
         let active = self.active.clone();
         match command {
-            Command::OpenSwitcher => return Ok(Ran::Ui),
+            Command::OpenSwitcher | Command::ToggleSidebar => return Ok(Ran::Ui),
             Command::CloseTab => {
                 if let Some(a) = &active {
                     self.close(a)?;
@@ -281,6 +285,7 @@ pub trait Keymap {
 /// | Mod+Alt+Arrow | focus the stack that way |
 /// | Mod+Shift+Enter | zoom the stack |
 /// | Mod+Shift+E | show all tabs (the switcher) |
+/// | Mod+Shift+L | show or hide the sidebar |
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DefaultKeymap;
 
@@ -313,6 +318,7 @@ impl Keymap for DefaultKeymap {
             ("\\" | "|", true) => Some(Command::Split(Side::Bottom)),
             ("Enter", true) => Some(Command::ToggleZoom),
             ("e", true) => Some(Command::OpenSwitcher),
+            ("l", true) => Some(Command::ToggleSidebar),
             (digit, false) => match digit.parse::<usize>() {
                 Ok(9) => Some(Command::GotoTab(usize::MAX)),
                 Ok(n @ 1..=8) => Some(Command::GotoTab(n - 1)),

@@ -112,6 +112,7 @@ fn docks_toggle_and_the_switcher_is_the_uis() {
     ws.run(Command::ToggleDock(Side::Left)).unwrap();
     assert_eq!(ws.dock(Side::Left).unwrap().shown, Shown::Open);
     assert_eq!(ws.run(Command::OpenSwitcher).unwrap(), Ran::Ui);
+    assert_eq!(ws.run(Command::ToggleSidebar).unwrap(), Ran::Ui);
 }
 
 #[test]
@@ -207,4 +208,32 @@ fn a_command_round_trips_through_serde() {
         let json = serde_json::to_string(&cmd).unwrap();
         assert_eq!(serde_json::from_str::<Command>(&json).unwrap(), cmd);
     }
+}
+
+#[test]
+fn a_layout_is_simple_until_it_has_a_second_tab_a_split_a_dock_a_float_or_a_window() {
+    let mut ws = Workspace::new();
+    assert!(ws.is_simple(), "empty");
+    ws.open(Pane::new("a", "v", "A"), Target::Tab).unwrap();
+    assert!(ws.is_simple(), "one tab");
+    let mut two = ws.clone();
+    two.open(Pane::new("b", "v", "B"), Target::Tab).unwrap();
+    assert!(!two.is_simple());
+    let mut docked = ws.clone();
+    docked
+        .open(Pane::new("f", "v", "F"), Target::Dock(Side::Left))
+        .unwrap();
+    assert!(!docked.is_simple());
+    let mut floating = ws.clone();
+    floating
+        .open(
+            Pane::new("f", "v", "F"),
+            Target::Float(app_shell::Rect::new(0.0, 0.0, 9.0, 9.0)),
+        )
+        .unwrap();
+    assert!(!floating.is_simple());
+    two.run(Command::MoveToNewWindow).unwrap();
+    assert!(!two.is_simple(), "a pop-out");
+    two.close(&id("a")).unwrap();
+    assert!(!two.is_simple(), "the tab left is in a pop-out");
 }
