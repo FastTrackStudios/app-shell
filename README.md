@@ -1,0 +1,180 @@
+# app-shell
+
+An app's shell for [Dioxus](https://dioxuslabs.com): windows, splits, tab
+stacks, docks, floating stacks, pop-out windows, window decorations, the tab
+switcher and popup menus. It renders the same on **dioxus-web** and on
+**dioxus-native** (Blitz).
+
+The layout is plain data that your app owns. app-shell draws it and turns
+pointer drags and keys into operations on it. It does not store the layout,
+run a command framework, or theme anything beyond its own CSS variables.
+
+It was extracted from Architect's `architect-workspace` crate, without
+Architect, CRDTs, storage or the Action List.
+
+## Crates
+
+| crate | what it is | depends on |
+|---|---|---|
+| `app-shell` | the layout model (no features), and the Dioxus components (feature `ui`, on by default) | `serde`, `thiserror`; with `ui`: `dioxus`, `futures-channel`, `futures-util`, `tracing` |
+| `app-shell-native` | pop-out OS windows and window decorations on dioxus-native | `app-shell`, `dioxus-native`, `blitz-shell`, `blitz-html` |
+
+A browser build depends only on `app-shell`, so it never pulls in Blitz or wgpu.
+
+## The layout
+
+```text
+Workspace
+├── windows: Vec<Window>     the first is the main window; the rest are pop-outs
+│   ├── center: Node         a tree of Split { axis, children: [(Node, share)] } ending in
+│   │                        Group (a tab stack: tabs, current, chrome)
+│   ├── docks: left / right / bottom, each a Node with a size and shown state
+│   └── floats: stacks floating over the window (snap, pin, minimise)
+├── panes: Vec<Pane>         every tab: id, view kind, state, title, pinned, history
+├── active, recent, closed   focus, most recent first, and closed tabs to reopen
+└── next_id, aliases         ids are never reused; ids of stacks that went still resolve
+```
+
+Every gesture and every key comes down to an operation: `open`, `move_pane`
+(to a stack, beside a stack, a dock, a float or a new window), `close`,
+`close_others`, `reopen`, `activate`, `cycle_tab`, `goto_tab`, `set_shares`,
+`even`, `set_dock_shown`, `set_dock_size`, `pop_out_dock`, `dock_back`,
+`close_window`, `to_main_window`, `set_zoomed`, `snap`, `pin`, `minimise`,
+`navigate` and `go`. After each one the layout is **repaired** to its
+invariants: every tab is in exactly one stack, empty stacks go, one-child
+splits unwrap, shares are positive and sum to one, and so on (`repair.rs`).
+A layout read back from storage goes through `Workspace::repaired()`, so a
+layout written by an older or newer app, or edited by hand, still opens.
+
+## The seams your app owns
+
+- **Storage.** You pass a `Signal<Workspace>` and an `on_change`. Save the
+  value wherever you like: a file, a CRDT, a server. It is `serde`
+  `Serialize`/`Deserialize`.
+- **Keys and actions.** A `Command` enum (close tab, reopen, next/previous,
+  go to tab *n*, split, focus in a direction, zoom, pin, move to a new or the
+  main window, toggle a dock, open the switcher) and `Workspace::run(command)`.
+  Keys are mapped by a `Keymap` you implement, or by `Bindings`
+  (`"Mod+Shift+T" => ReopenClosed`), or by `DefaultKeymap` (browser-tab
+  habits). `on_command` hears every command first and can take it.
+- **Theme.** CSS custom properties (`--as-bg`, `--as-accent`, `--as-tab-h`,
+  …) set on the shell's root from a `Theme` (`Theme::dark()`,
+  `Theme::light()`, `.set(name, value)`). With `Theme::inherit()` they come
+  from an ancestor you style.
+- **Tab content.** You register `TabKind`s (an id, a title, an icon and a
+  render function) in a `TabKinds`. A pane names its kind. A kind that is not
+  registered shows a placeholder and keeps its place. An extension system can
+  `register` and `unregister` kinds through the same API.
+
+## A minimal app
+
+```rust
+use app_shell::ui::{AppShell, TabCtx, TabKind, TabKinds};
+use app_shell::{Pane, Side, Target, Workspace};
+use dioxus::prelude::*;
+
+fn kinds() -> TabKinds {
+    TabKinds::new().with(TabKind::new("note", "Note", |ctx: TabCtx| rsx! {
+        div { style: "padding: 16px;", "{ctx.pane.title}" }
+    }))
+}
+
+fn app() -> Element {
+    let layout = use_signal(|| {
+        let mut ws = Workspace::new();
+        let _ = ws.open(Pane::new("a", "note", "First"), Target::Tab);
+        let _ = ws.open(Pane::new("b", "note", "Second"), Target::Split(Side::Right));
+        ws
+    });
+    rsx! {
+        div { style: "position: absolute; inset: 0; display: flex;",
+            AppShell {
+                layout,
+                kinds: kinds(),
+                on_change: move |ws: Workspace| {
+                    // Save it: serde_json::to_string(&ws), a CRDT, a server …
+                    let _ = ws;
+                },
+            }
+        }
+    }
+}
+
+fn main() {
+    dioxus::launch(app);
+}
+```
+
+Natively, `app_shell_native::launch(main, popout, Config::default())` takes
+your main component and a pop-out component. Each pop-out OS window renders
+`AppShell { layout: use_window_layout(), window: id, … }`, and all windows
+stay in sync through a `LayoutHub`. Without system decorations (the default),
+the shell's title bar is the window's frame, with minimise, maximise, close
+and drag through `WindowControls`.
+
+Components inside the shell reach the layout through `use_shell()`:
+`shell.open(pane, target)`, `shell.command(cmd)`,
+`shell.menu(x, y, items)`, `shell.apply(|ws| ws.move_pane(…))`.
+
+## How it renders on both
+
+The components follow Blitz's rules, so the same tree lays out in a browser
+and in Blitz:
+
+- inline styles only, reading the theme's variables; the small hover sheet is
+  additive
+- no `position: fixed` or `sticky`: overlays (drop zones, switcher, popups)
+  mount at the shell's root with `position: absolute`
+- no `overflow: auto`: `overflow: hidden`, or `overflow-y: scroll` where a
+  list scrolls
+- every flex child that must shrink has `min-width: 0` or `min-height: 0`
+- pointer events for every drag (no HTML drag and drop)
+- nothing measured synchronously inside an event handler (a split's length
+  is measured in a spawned task)
+
+Drop targets are elements of their own (a stack's middle and its four side
+bands, each tab's halves, the window's edges, a "New window" target). The
+element under the pointer decides where the tab lands, so the drag needs no
+geometry measured.
+
+A browser has no OS windows: there the main window's shell draws pop-outs in
+the page, as frames you can move and close (their tabs go back).
+
+## Dioxus version
+
+app-shell uses the **published** `dioxus = "=0.8.0-alpha.3"` (and the
+matching `dioxus-native` and `blitz-shell` `0.3.0-beta.4`), so a crate on
+crates.io's dioxus can depend on it (FastTrackStudios/drive does).
+**Architect pins dioxus by git rev `430cfb56`**. To adopt app-shell it would
+have to move to the published alpha, patching in its forks' fixes; see
+[docs/migration.md](docs/migration.md).
+
+An app built for the web with `dioxus` and `default-features = false` hits
+missing `web-sys` features in `dioxus-web` 0.8.0-alpha.3. Keep dioxus's
+default features in the app crate.
+
+## Developing
+
+```bash
+devenv shell -- cargo test --workspace            # model, commands, repair, UI (dioxus-ssr), gestures
+devenv shell -- cargo clippy --workspace --all-targets
+devenv shell -- cargo check -p app-shell --no-default-features   # the model alone
+```
+
+The devenv environment pins Rust 1.99.1 and includes the libraries
+app-shell-native needs on Linux (fontconfig, wayland, xkbcommon, vulkan).
+
+## What it is not
+
+- Not storage. No files, CRDTs, sync or screensets: keep the `Workspace`
+  where you like, and keep several of them yourself if you want named
+  layouts.
+- Not a command framework. No palette, Action List or menu bar: map your
+  commands onto `Command` and call `shell.command`.
+- Not a design system. Only the shell's own chrome, themed by CSS variables.
+- Not an extension host. `TabKinds` is the API an extension host would call.
+
+## Licence
+
+MIT OR Apache-2.0, as the Architect code it comes from (see `NOTICE`). Icons
+are Lucide's path data (ISC).
