@@ -45,18 +45,24 @@ const PANEL: &str = "background-color: var(--as-sidebar-bg); backdrop-filter: va
 pub(crate) fn DockedSidebar(content: Element) -> Element {
     let shell = use_shell();
     let width = *shell.sidebar_w.read();
+    // The edge sits beside the panel, not in it: the panel clips (and its
+    // backdrop filter makes it a stacking context), so an edge inside it
+    // would lose its outer half under the page.
     rsx! {
         div {
-            class: "as-sidebar",
-            "data-sidebar": "docked",
-            style: "position: relative; flex: none; width: {width}px; height: 100%; border-right: 1px solid var(--as-border); {PANEL}",
-            DragArea {
-                style: "flex: none; height: var(--as-topbar-h); min-width: 0;".to_owned(),
-                WindowLights {}
-            }
-            {content}
+            style: "position: relative; flex: none; width: {width}px; height: 100%; display: flex;",
             div {
-                class: "as-divider",
+                class: "as-sidebar",
+                "data-sidebar": "docked",
+                style: "flex: 1 1 0px; min-width: 0; height: 100%; border-right: 1px solid var(--as-border); {PANEL}",
+                DragArea {
+                    style: "flex: none; height: var(--as-topbar-h); min-width: 0;".to_owned(),
+                    WindowLights {}
+                }
+                {content}
+            }
+            div {
+                class: "as-divider as-sidebar-edge",
                 style: "position: absolute; right: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 10;",
                 onpointerdown: move |event| {
                     event.stop_propagation();

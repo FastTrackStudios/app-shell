@@ -18,10 +18,11 @@ Nothing here has been done yet: Studio still mounts into
 | `store.rs`, `home.rs`, `screenset.rs`, `deck.rs` (storage, interface files, screensets, scope tabs) | not ported. The app owns storage (`Signal<Workspace>` + `on_change`). Screensets and decks are app features built on several `Workspace` values. |
 | `control/*` (every operation as an Action List action), `host/commands.rs`, `host/actions.rs` | `Command` + `Workspace::run` + `Keymap`/`Bindings`/`DefaultKeymap`, and `on_command`. An Action List adapter maps its actions onto `Command`, or calls `Workspace` operations directly. |
 | `kinds.rs`, `ctx.rs`, `paint/*`, `pane_space.rs`, `presence.rs`, `meter.rs`, `frames.rs`, `pacing.rs`, `shot.rs` (view kinds, the `ViewCtx` contract, paint views, cursors, frame meters, `APP_SHOT`) | not ported. These are the **view** contract, not the shell. They stay in Architect (or a crate of their own) and plug in as `TabKind`s. |
-| `host/*` (`WorkspaceView`, `Views`, tab bars, docks, overlays, the switcher, ~11k lines) | rewritten, smaller: `ui::AppShell`, `StackView`, `TabBar`, `NodeView`, `WindowBody`, `Switcher`, `PopupLayer`, `TitleBar`. Drop zones are elements rather than measured rectangles. |
+| `host/*` (`WorkspaceView`, `Views`, tab bars, docks, overlays, the switcher, ~11k lines) | rewritten, smaller: `ui::AppShell`, `StackView`, `TabBar`, `NodeView`, `WindowBody`, `SoloView`, `Switcher`, `PopupLayer`, `TopBar`. Drop zones are elements rather than measured rectangles. |
 | `native.rs` (pop-out OS windows, frame meters, `APP_FRAMES` driving) | `app-shell-native::launch`: pop-outs and decorations only. No meters, no input driving, no dma-buf renderer option. |
 | `architect-theme` | CSS variables (`--as-*`) from a `Theme`. |
-| `architect-shell` (bars, page, keyboard, favourites, motion) | `TitleBar`, `PhoneView`, `Switcher`. The rest stays in Architect's shell. |
+| `architect-shell` (bars, page, keyboard, favourites, motion) | `TopBar` (the title row and toolbar in one strip), `WindowLights`, `Sidebar` and its rows, the phone drawer, `Switcher`. The rest (favourites, the keyboard inset, status, motion) stays in Architect's shell. |
+| `architect-shell`'s `WindowChrome` / `WindowControls` / `fit_traffic_lights` (macOS lights in a 40 pt row, Mac-style lights drawn elsewhere) | `WindowControls` (close, minimise, zoom, drag, `focused`, `system_lights`), `WindowLights`, and `app-shell-native`'s `mac::fit_traffic_lights` placing the system's lights in the 44 pt top bar (`TOP_BAR_H`). Same colours, sizes and inset as Architect's. |
 
 ## Step by step
 
@@ -51,8 +52,8 @@ Nothing here has been done yet: Studio still mounts into
    `on_command` / Action List adapter. Keys move from `WindowKeys` to a
    `Bindings` table, or to an Architect `Keymap` implementation that reads the
    Action List's bindings.
-6. **Swap the host.** Replace `WorkspaceView` with `AppShell` in Architect's
-   app root, behind a feature flag, with the layout in a `Signal<Workspace>`
+6. **Swap the host.** Replace `WorkspaceView` with `AppShell { tabs: Tabs::On, … }`
+   in Architect's app root (tabs are off by default), behind a feature flag, with the layout in a `Signal<Workspace>`
    and `on_change` writing it where `WorkspaceStore` wrote it. Natively,
    replace `architect_workspace::native::launch` with
    `app_shell_native::launch`, keeping Architect's own launcher bits (fonts,
@@ -124,6 +125,14 @@ What app-shell's native side would hit without each fix:
   (the model's `stacked` flag and `slides()` geometry are there, the drawing
   is not), minimised-float chips and cross-window tab dragging. Studio uses
   some of these. Each is an issue on this repo or stays in Architect.
+- **The title row's height.** Architect's Mac row is 40 pt; app-shell's top
+  bar is 44 pt (`--as-topbar-h`, `TOP_BAR_H`). An app that changes the CSS
+  variable must change the constant the native side places macOS's lights
+  by, or the lights sit off centre.
+- **macOS is untested here.** The macOS path (transparent title bar,
+  `fit_traffic_lights`) is ported from Architect but was built and run only
+  on Linux: there is no macOS target on the dev machine. Check it on a Mac
+  before relying on it.
 - **Touch.** A browser gives a touch pointer implicit capture, so a tab drag
   started with a finger does not reach the drop zones. Phones use the
   switcher; tablets need a fix (issue filed).

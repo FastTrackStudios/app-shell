@@ -397,7 +397,7 @@ pub fn SearchField(
     rsx! {
         div {
             class: "as-search",
-            style: "display: flex; align-items: center; gap: 6px; width: 340px; max-width: 100%; height: 28px; padding: 0 10px; box-sizing: border-box; border-radius: 8px; background-color: var(--as-search-bg); border: 1px solid var(--as-border); color: var(--as-muted);",
+            style: "display: flex; align-items: center; gap: 6px; flex: 1 1 340px; width: 340px; min-width: 0; max-width: 420px; height: 28px; padding: 0 10px; box-sizing: border-box; border-radius: 8px; background-color: var(--as-search-bg); border: 1px solid var(--as-border); color: var(--as-muted);",
             IconView { icon: icons::SEARCH, size: 14.0 }
             input {
                 r#type: "text",

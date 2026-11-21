@@ -1,9 +1,14 @@
 # app-shell
 
-An app's shell for [Dioxus](https://dioxuslabs.com): windows, splits, tab
-stacks, docks, floating stacks, pop-out windows, window decorations, the tab
-switcher and popup menus. It renders the same on **dioxus-web** and on
+An app's shell for [Dioxus](https://dioxuslabs.com): a macOS-style top bar
+with traffic lights, a sidebar, and one content area. When the app asks for
+them, it also draws tabs, splits, docks, floating stacks, pop-out windows and
+the tab switcher. It renders the same on **dioxus-web** and on
 **dioxus-native** (Blitz).
+
+**Tabs are opt-in.** By default a window is one content area: no tab bar, no
+drop zones, no switcher. An app that wants tabs gives the shell a layout and
+sets `tabs`.
 
 The layout is plain data that your app owns. app-shell draws it and turns
 pointer drags and keys into operations on it. It does not store the layout,
@@ -46,6 +51,38 @@ splits unwrap, shares are positive and sum to one, and so on (`repair.rs`).
 A layout read back from storage goes through `Workspace::repaired()`, so a
 layout written by an older or newer app, or edited by hand, still opens.
 
+## The window: top bar, traffic lights, sidebar
+
+- **`TopBar`**: one strip that is both the window's title bar and its toolbar,
+  like a macOS unified toolbar. From the left it holds the traffic lights
+  (when no sidebar holds them), the sidebar button, back and forward, and the
+  title or the app's `lead` (a breadcrumb). The app's `search` sits in the
+  centre and its `actions` at the right (`ToolbarButton`, `ToolbarGroup` for
+  a view-mode switch, `SearchField`). Every empty part moves the window, and
+  a double press zooms it. The shell draws a default one titled with its
+  `title`; pass your own as `top_bar` to fill the slots.
+- **Traffic lights** (`WindowLights`): close, minimise and zoom in red,
+  yellow and green at the top-left, 12 pt, 8 pt apart, 14 pt in. Their glyphs
+  show on hover, and they turn grey when the window isn't the key window.
+  - **Linux and Windows:** the window has no system frame and the shell draws
+    the lights.
+  - **macOS:** the system's own lights stay, over a transparent, full-size
+    title bar, placed in the top bar's 44 pt row. The shell only keeps their
+    room clear.
+  - **Browser:** no window buttons (the browser has its own), but the same
+    top bar.
+- **`Sidebar`**: a full-height panel at the left, a shade apart and
+  translucent (`--as-sidebar-bg`, blurred where the renderer can). The
+  traffic lights sit at its top. It has a `header` slot (`SidebarSwitcher`,
+  a library or organisation switcher), sections with small uppercase
+  headings that fold (`SidebarSection`), rows with an icon, a label, an
+  optional count and a selected highlight (`SidebarItem`), and a `footer`
+  slot.
+  - **Desktop:** docked, resizable by its edge (double press resets the
+    width) and collapsible (the top bar's button, Mod+Shift+L); `on_sidebar`
+    hears each change so the app can keep it.
+  - **Phone:** a drawer behind a menu button. Picking a row closes it.
+
 ## The seams your app owns
 
 - **Storage.** You pass a `Signal<Workspace>` and an `on_change`. Save the
@@ -61,6 +98,11 @@ layout written by an older or newer app, or edited by hand, still opens.
   …) set on the shell's root from a `Theme` (`Theme::dark()`,
   `Theme::light()`, `.set(name, value)`). With `Theme::inherit()` they come
   from an ancestor you style.
+- **Tabs.** `tabs: Tabs::Off` (the default) draws one content area: the
+  shell's `children`, or the layout's active tab alone. `Tabs::Auto` draws
+  one area while the layout is simple (`Workspace::is_simple`: one tab, no
+  split, dock, float or pop-out) and the tab chrome once the app opens a
+  second tab. `Tabs::On` always draws it. Without tabs, tab keys do nothing.
 - **Tab content.** You register `TabKind`s (an id, a title, an icon and a
   render function) in a `TabKinds`. A pane names its kind. A kind that is not
   registered shows a placeholder and keeps its place. An extension system can
@@ -68,33 +110,17 @@ layout written by an older or newer app, or edited by hand, still opens.
 
 ## A minimal app
 
+One content area, a top bar and nothing else:
+
 ```rust
-use app_shell::ui::{AppShell, TabCtx, TabKind, TabKinds};
-use app_shell::{Pane, Side, Target, Workspace};
+use app_shell::ui::AppShell;
 use dioxus::prelude::*;
 
-fn kinds() -> TabKinds {
-    TabKinds::new().with(TabKind::new("note", "Note", |ctx: TabCtx| rsx! {
-        div { style: "padding: 16px;", "{ctx.pane.title}" }
-    }))
-}
-
 fn app() -> Element {
-    let layout = use_signal(|| {
-        let mut ws = Workspace::new();
-        let _ = ws.open(Pane::new("a", "note", "First"), Target::Tab);
-        let _ = ws.open(Pane::new("b", "note", "Second"), Target::Split(Side::Right));
-        ws
-    });
     rsx! {
         div { style: "position: absolute; inset: 0; display: flex;",
-            AppShell {
-                layout,
-                kinds: kinds(),
-                on_change: move |ws: Workspace| {
-                    // Save it: serde_json::to_string(&ws), a CRDT, a server …
-                    let _ = ws;
-                },
+            AppShell { title: "Notes",
+                p { "Hello" }
             }
         }
     }
@@ -105,12 +131,75 @@ fn main() {
 }
 ```
 
+With a sidebar, a filled top bar, and tabs once a second one opens:
+
+```rust
+use app_shell::ui::{
+    AppShell, SearchField, Sidebar, SidebarItem, SidebarSection, SidebarSwitcher, TabCtx, TabKind,
+    TabKinds, Tabs, ToolbarButton, ToolbarGroup, TopBar, icons,
+};
+use app_shell::{Pane, Target, Workspace};
+use dioxus::prelude::*;
+
+fn kinds() -> TabKinds {
+    TabKinds::new().with(TabKind::new("folder", "Folder", |ctx: TabCtx| rsx! {
+        div { style: "padding: 16px;", "{ctx.pane.title}" }
+    }))
+}
+
+fn app() -> Element {
+    let layout = use_signal(|| {
+        let mut ws = Workspace::new();
+        let _ = ws.open(Pane::new("home", "folder", "Overview"), Target::Tab);
+        ws
+    });
+    rsx! {
+        div { style: "position: absolute; inset: 0; display: flex;",
+            AppShell {
+                layout,
+                kinds: kinds(),
+                tabs: Tabs::Auto,
+                on_change: move |ws: Workspace| {
+                    // Save it: serde_json::to_string(&ws), a CRDT, a server …
+                    let _ = ws;
+                },
+                sidebar: rsx! {
+                    Sidebar {
+                        header: rsx! { SidebarSwitcher { title: "My Library", detail: "4 locations" } },
+                        footer: rsx! { SidebarItem { label: "Settings", icon: icons::SETTINGS } },
+                        SidebarSection { title: "Library",
+                            SidebarItem { label: "Overview", icon: icons::HOME, selected: true }
+                            SidebarItem { label: "Recents", icon: icons::LAYERS, badge: "24" }
+                        }
+                    }
+                },
+                top_bar: rsx! {
+                    TopBar {
+                        title: "Overview",
+                        search: rsx! { SearchField {} },
+                        actions: rsx! {
+                            ToolbarGroup {
+                                ToolbarButton { icon: icons::GRID, label: "Grid", active: true, on_press: |_| {} }
+                                ToolbarButton { icon: icons::LIST, label: "List", on_press: |_| {} }
+                            }
+                        },
+                        on_back: |_| {},
+                        on_forward: |_| {},
+                    }
+                },
+            }
+        }
+    }
+}
+```
+
 Natively, `app_shell_native::launch(main, popout, Config::default())` takes
 your main component and a pop-out component. Each pop-out OS window renders
-`AppShell { layout: use_window_layout(), window: id, … }`, and all windows
-stay in sync through a `LayoutHub`. Without system decorations (the default),
-the shell's title bar is the window's frame, with minimise, maximise, close
-and drag through `WindowControls`.
+`AppShell { layout: use_window_layout(), window: id, tabs: Tabs::On, … }`,
+and all windows stay in sync through a `LayoutHub`. Without system
+decorations (the default), the shell's top bar is the window's frame. It
+reaches close, minimise, zoom, drag and the window's focus through
+`WindowControls`.
 
 Components inside the shell reach the layout through `use_shell()`:
 `shell.open(pane, target)`, `shell.command(cmd)`,
