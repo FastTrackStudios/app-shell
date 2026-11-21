@@ -24,10 +24,9 @@ fn Harness(start: Workspace) -> Element {
         let shell = use_shell();
         let first = ctx.pane.id.0 == "a";
         use_hook(move || {
-            if first
-                && let Some(script) = SCRIPT.with(|s| s.borrow_mut().take()) {
-                    script(shell);
-                }
+            if first && let Some(script) = SCRIPT.with(|s| s.borrow_mut().take()) {
+                script(shell);
+            }
         });
         rsx! { "{ctx.pane.title}" }
     }));

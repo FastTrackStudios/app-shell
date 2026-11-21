@@ -447,11 +447,12 @@ impl Workspace {
         }
         if let Area::Float(f) = loc.area
             && let Some(window) = self.windows.get_mut(loc.window)
-                && f < window.floats.len() {
-                    let mut float = window.floats.remove(f);
-                    float.minimised = false;
-                    window.floats.push(float);
-                }
+            && f < window.floats.len()
+        {
+            let mut float = window.floats.remove(f);
+            float.minimised = false;
+            window.floats.push(float);
+        }
         self.recent.retain(|p| p != pane);
         self.recent.insert(0, pane.clone());
         self.active = Some(pane.clone());

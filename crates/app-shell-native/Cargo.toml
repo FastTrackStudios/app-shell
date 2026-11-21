@@ -8,6 +8,12 @@ repository.workspace = true
 
 [dependencies]
 app-shell.workspace = true
-dioxus = { workspace = true, features = ["macro", "html", "signals", "hooks"] }
-dioxus-native = { workspace = true, features = ["vello-hybrid", "system-fonts", "svg", "html"] }
+dioxus = { workspace = true, features = ["macro", "html", "signals", "hooks", "document"] }
+# The renderer: Vello on wgpu, the system's fonts, SVG icons, Blitz's HTML
+# parser for `dangerous_inner_html`.
+dioxus-native = { workspace = true, features = ["vello", "system-fonts", "svg", "html", "clipboard"] }
+# The pop-outs' views and their event loop proxy, as dioxus-native builds
+# its own window: the same versions it pins.
+blitz-shell = { version = "=0.3.0-beta.4", default-features = false }
+blitz-html = "=0.3.0-beta.4"
 tracing.workspace = true
