@@ -11,8 +11,11 @@ use super::{AppShell, FormFactor, TabCtx, TabKind, TabKinds};
 use crate::model::{Axis, Node, Pane, PaneId, Side, Workspace};
 use crate::ops::{Dest, Target};
 
+/// What a test does to the shell once it is mounted.
+type Script = Box<dyn Fn(Shell)>;
+
 thread_local! {
-    static SCRIPT: RefCell<Option<Box<dyn Fn(Shell)>>> = RefCell::new(None);
+    static SCRIPT: RefCell<Option<Script>> = RefCell::new(None);
     static AFTER: RefCell<Option<Workspace>> = const { RefCell::new(None) };
     static TOLD: RefCell<usize> = const { RefCell::new(0) };
 }

@@ -154,7 +154,9 @@ fn a_float_draws_over_the_window_where_it_was_put() {
     .unwrap();
     let html = render(ws);
     assert!(html.contains("class=\"as-float\""));
-    assert!(html.contains("left: 40px; top: 50px; width: 300px; height: 200px;"));
+    assert!(html.contains(
+        "left: 40px; right: auto; top: 50px; bottom: auto; width: 300px; height: 200px;"
+    ));
 }
 
 #[test]

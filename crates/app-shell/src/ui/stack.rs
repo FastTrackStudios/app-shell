@@ -22,17 +22,12 @@ pub fn StackView(group: Group, window: WindowId) -> Element {
     let pane = current.as_ref().and_then(|p| layout.pane(p)).cloned();
     drop(layout);
     let dragging = shell.dragging();
-    let border = if focused {
-        "var(--as-accent)"
-    } else {
-        "transparent"
-    };
     let gid = group.id;
     rsx! {
         div {
             class: "as-stack",
             "data-group": "{gid.0}",
-            style: "position: relative; flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background-color: var(--as-bg); box-shadow: inset 0 2px 0 -1px {border};",
+            style: "position: relative; flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background-color: var(--as-bg);",
             if group.chrome != Chrome::Bare {
                 TabBar { group: group.clone() }
             }
@@ -120,6 +115,7 @@ pub fn TabBar(group: Group) -> Element {
             Some((i, id.clone(), p.title.clone(), p.pinned, p.view.0.clone()))
         })
         .collect();
+    let focused = group.current_tab().is_some() && layout.active.as_ref() == group.current_tab();
     drop(layout);
     let icons_only = group.chrome == Chrome::Icons;
     let gid = group.id;
@@ -142,6 +138,7 @@ pub fn TabBar(group: Group) -> Element {
                     pinned,
                     view,
                     current: i == group.current,
+                    focused: focused && i == group.current,
                     icons_only,
                 }
             }
@@ -196,6 +193,8 @@ fn TabButton(
     pinned: bool,
     view: String,
     current: bool,
+    /// The active tab of the whole layout: marked with the accent.
+    focused: bool,
     icons_only: bool,
 ) -> Element {
     let shell = use_shell();
@@ -219,7 +218,7 @@ fn TabButton(
             "data-pane": "{pane.0}",
             "data-current": "{current}",
             title: "{title}",
-            style: "position: relative; flex: 0 1 auto; min-width: 0; max-width: 220px; display: flex; align-items: center; gap: 6px; padding: {pad}; background-color: {bg}; color: {fg}; border-right: 1px solid var(--as-border); cursor: default; white-space: nowrap; overflow: hidden; box-shadow: inset 2px 0 0 0 {lit(before)};",
+            style: "position: relative; flex: 0 1 auto; min-width: 0; max-width: 220px; display: flex; align-items: center; gap: 6px; padding: {pad}; background-color: {bg}; color: {fg}; border-right: 1px solid var(--as-border); cursor: default; white-space: nowrap; overflow: hidden; box-shadow: inset 2px 0 0 0 {lit(before)}, inset 0 2px 0 0 {lit(focused)};",
             onpointerdown: move |event| {
                 if event.trigger_button() != Some(dioxus::html::input_data::MouseButton::Primary) {
                     return;
@@ -343,11 +342,21 @@ fn DropZones(group: GroupId) -> Element {
         None => None,
     };
     let highlight = match lit_side {
-        Some(None) => Some("inset: 0;"),
-        Some(Some(Side::Left)) => Some("left: 0; top: 0; bottom: 0; width: 50%;"),
-        Some(Some(Side::Right)) => Some("right: 0; top: 0; bottom: 0; width: 50%;"),
-        Some(Some(Side::Top)) => Some("left: 0; right: 0; top: 0; height: 50%;"),
-        Some(Some(Side::Bottom)) => Some("left: 0; right: 0; bottom: 0; height: 50%;"),
+        // Every edge and size, each time: a renderer that patches a
+        // changed style property by property keeps none of the last one.
+        Some(None) => Some("left: 0; right: 0; top: 0; bottom: 0; width: auto; height: auto;"),
+        Some(Some(Side::Left)) => {
+            Some("left: 0; right: auto; top: 0; bottom: 0; width: 50%; height: auto;")
+        }
+        Some(Some(Side::Right)) => {
+            Some("left: auto; right: 0; top: 0; bottom: 0; width: 50%; height: auto;")
+        }
+        Some(Some(Side::Top)) => {
+            Some("left: 0; right: 0; top: 0; bottom: auto; width: auto; height: 50%;")
+        }
+        Some(Some(Side::Bottom)) => {
+            Some("left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 50%;")
+        }
         None => None,
     };
     let band = |side: Side| match side {

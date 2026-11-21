@@ -115,21 +115,26 @@ fn DockView(dock: Dock, side: Side, window: WindowId) -> Element {
 fn FloatView(float: Float, window: WindowId) -> Element {
     let shell = use_shell();
     let r = float.rect;
+    // Every edge and size, each time (see the drop highlight).
     let place = match float.snap {
-        Some(Snap::Maximised) => "inset: 0;".to_owned(),
-        Some(Snap::Half(Side::Left)) => "left: 0; top: 0; bottom: 0; width: 50%;".to_owned(),
-        Some(Snap::Half(_)) => "right: 0; top: 0; bottom: 0; width: 50%;".to_owned(),
+        Some(Snap::Maximised) => {
+            "left: 0; right: 0; top: 0; bottom: 0; width: auto; height: auto;".to_owned()
+        }
+        Some(Snap::Half(Side::Left)) => {
+            "left: 0; right: auto; top: 0; bottom: 0; width: 50%; height: auto;".to_owned()
+        }
+        Some(Snap::Half(_)) => {
+            "left: auto; right: 0; top: 0; bottom: 0; width: 50%; height: auto;".to_owned()
+        }
         Some(Snap::EdgeDock {
             side: Side::Left,
             width,
-        }) => {
-            format!("left: 0; top: 0; bottom: 0; width: {width}px;")
-        }
+        }) => format!("left: 0; right: auto; top: 0; bottom: 0; width: {width}px; height: auto;"),
         Some(Snap::EdgeDock { width, .. }) => {
-            format!("right: 0; top: 0; bottom: 0; width: {width}px;")
+            format!("left: auto; right: 0; top: 0; bottom: 0; width: {width}px; height: auto;")
         }
         None => format!(
-            "left: {}px; top: {}px; width: {}px; height: {}px;",
+            "left: {}px; right: auto; top: {}px; bottom: auto; width: {}px; height: {}px;",
             r.x, r.y, r.w, r.h
         ),
     };

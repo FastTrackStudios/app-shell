@@ -18,6 +18,7 @@ pub fn TitleBar(title: String) -> Element {
     let count = shell.layout.read().tab_count();
     let drag = controls.and_then(|c| c.drag);
     let zoom = controls.and_then(|c| c.toggle_maximize);
+    let phone = shell.form() == super::shell::FormFactor::Phone;
     rsx! {
         div {
             class: "as-titlebar",
@@ -38,9 +39,12 @@ pub fn TitleBar(title: String) -> Element {
                 },
                 "{title}"
             }
-            BarButton { icon: icons::PANEL_LEFT, label: "Left dock", on_press: move |()| shell.command(Command::ToggleDock(Side::Left)) }
-            BarButton { icon: icons::PANEL_BOTTOM, label: "Bottom dock", on_press: move |()| shell.command(Command::ToggleDock(Side::Bottom)) }
-            BarButton { icon: icons::PANEL_RIGHT, label: "Right dock", on_press: move |()| shell.command(Command::ToggleDock(Side::Right)) }
+            // A phone has no docks to show.
+            if !phone {
+                BarButton { icon: icons::PANEL_LEFT, label: "Left dock", on_press: move |()| shell.command(Command::ToggleDock(Side::Left)) }
+                BarButton { icon: icons::PANEL_BOTTOM, label: "Bottom dock", on_press: move |()| shell.command(Command::ToggleDock(Side::Bottom)) }
+                BarButton { icon: icons::PANEL_RIGHT, label: "Right dock", on_press: move |()| shell.command(Command::ToggleDock(Side::Right)) }
+            }
             div {
                 class: "as-hov as-switcher-button",
                 title: "All tabs",

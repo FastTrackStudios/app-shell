@@ -470,6 +470,12 @@ pub const SHELL_CSS: &str = r"
 .as-divider:hover { background-color: var(--as-accent); }
 ";
 
+/// The shell's sheet, in a component of its own that never changes.
+#[component]
+fn ShellStyle() -> Element {
+    rsx! { document::Style { {SHELL_CSS} } }
+}
+
 /// One window of a layout, its tabs drawn by the app's kinds.
 ///
 /// The app owns the layout: `layout` is its signal, and `on_change` hears
@@ -615,7 +621,7 @@ pub fn AppShell(
     );
     let window_for_body = window.clone();
     rsx! {
-        document::Style { {SHELL_CSS} }
+        ShellStyle {}
         div {
             class: "app-shell",
             "data-window": "{window.0}",
