@@ -30,7 +30,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
-use app_shell::ui::{HubMessage, LIGHTS_WIDTH, LayoutHub, WindowControls, WindowSystem, Windows};
+use app_shell::ui::{
+    HubMessage, LIGHTS_WIDTH, LayoutHub, ViewportSize, WindowControls, WindowSystem, Windows,
+};
 use app_shell::{Rect, WindowId};
 use blitz_shell::{BlitzShellEvent, BlitzShellProxy, View, WindowConfig};
 use dioxus::core::ScopeId;
@@ -94,6 +96,7 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         hub: LayoutHub::new(),
         decorated: config.system_decorations,
         focus: RefCell::new(Vec::new()),
+        sizes: RefCell::new(Vec::new()),
     });
     let vdom = VirtualDom::new_with_props(
         MainRoot,
@@ -156,9 +159,21 @@ struct Desk {
     decorated: bool,
     /// Each window's root, told when its window gains or loses the focus.
     focus: RefCell<Vec<(OsId, UnboundedSender<bool>)>>,
+    /// Each window's root, told its window's new size (logical points).
+    sizes: RefCell<Vec<(OsId, UnboundedSender<Size>)>>,
 }
 
 impl Desk {
+    /// The OS window `os` is now `size` (logical points).
+    fn resized(&self, os: OsId, size: (f64, f64)) {
+        self.sizes.borrow_mut().retain(|(_, s)| !s.is_closed());
+        for (w, s) in self.sizes.borrow().iter() {
+            if *w == os {
+                let _ = s.unbounded_send(size);
+            }
+        }
+    }
+
     /// The OS window `os` gained or lost the focus.
     fn focused(&self, os: OsId, on: bool) {
         self.focus.borrow_mut().retain(|(_, s)| !s.is_closed());
@@ -269,9 +284,21 @@ fn controls(
 /// controls in context (unless the system draws the frame).
 fn use_frame(desk: &Rc<Desk>, window: &Arc<dyn OsWindow>, close: Callback<()>) {
     let focused = use_signal(|| true);
+    let size = use_signal(|| logical_size(window.as_ref()));
+    use_context_provider(|| ViewportSize(size));
     let desk = desk.clone();
     let window = window.clone();
     use_hook(move || {
+        let (tx, mut rx) = unbounded::<(f64, f64)>();
+        desk.sizes.borrow_mut().push((window.id(), tx));
+        spawn(async move {
+            let mut size = size;
+            while let Some(s) = rx.next().await {
+                if *size.peek() != s {
+                    size.set(s);
+                }
+            }
+        });
         let (tx, mut rx) = unbounded::<bool>();
         desk.focus.borrow_mut().push((window.id(), tx));
         spawn(async move {
@@ -583,6 +610,7 @@ impl ApplicationHandler for App {
                     .or_else(|| self.desk.main.borrow().clone());
                 if let Some(os) = os {
                     fit_lights(os.as_ref(), self.desk.decorated);
+                    self.desk.resized(window, logical_size(os.as_ref()));
                 }
             }
             _ => {}
@@ -650,6 +678,16 @@ impl dioxus::document::Document for Head {
     fn create_head_component(&self) -> bool {
         true
     }
+}
+
+/// A window's size, logical points.
+type Size = (f64, f64);
+
+/// `window`'s content size in logical points.
+fn logical_size(window: &dyn OsWindow) -> (f64, f64) {
+    let scale = window.scale_factor().max(0.1);
+    let s = window.surface_size();
+    (f64::from(s.width) / scale, f64::from(s.height) / scale)
 }
 
 #[cfg(target_os = "macos")]

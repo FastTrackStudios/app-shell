@@ -8,8 +8,10 @@
 //! inside an event handler.
 
 mod chrome;
+mod foot;
 pub mod icons;
 mod kinds;
+mod overlay;
 mod popup;
 mod shell;
 mod sidebar;
@@ -25,8 +27,13 @@ pub use chrome::{
     BarButton, DragArea, LIGHT, LIGHT_GAP, LIGHTS_LEFT, LIGHTS_WIDTH, SearchField, TOP_BAR_H,
     ToolbarButton, ToolbarGroup, TopBar, WindowLights,
 };
+pub use foot::{Destination, PrimaryAction};
 pub use icons::{Icon, IconView};
 pub use kinds::{Render, TabCtx, TabKind, TabKinds};
+pub use overlay::{
+    PaletteItem, Sheet, SheetContent, SheetHandle, SheetId, SheetSpec, Swipeable, ToastSpec,
+    use_sheet,
+};
 pub use popup::{MenuAction, MenuItem, Popup, PopupContent, PopupLayer};
 pub use shell::{
     AppShell, FormFactor, KeymapHandle, SHELL_CSS, Shell, Tabs, use_shell, use_window_layout,
@@ -40,4 +47,4 @@ pub use split::NodeView;
 pub use stack::{StackView, TabBar, TabBody};
 pub use switcher::Switcher;
 pub use window::{InPageWindows, SoloView, WindowBody};
-pub use windows::{HubMessage, LayoutHub, WindowControls, WindowSystem, Windows};
+pub use windows::{HubMessage, LayoutHub, ViewportSize, WindowControls, WindowSystem, Windows};

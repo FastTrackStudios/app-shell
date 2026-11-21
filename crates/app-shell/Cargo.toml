@@ -9,7 +9,7 @@ repository.workspace = true
 [features]
 default = ["ui"]
 # The Dioxus components. Without it: the model only (no Dioxus at all).
-ui = ["dep:dioxus", "dep:futures-channel", "dep:futures-util", "dep:tracing"]
+ui = ["dep:dioxus", "dep:futures-channel", "dep:futures-util", "dep:futures-timer", "dep:tracing"]
 
 [dependencies]
 dioxus = { workspace = true, optional = true, features = ["macro", "html", "signals", "hooks", "document"] }
@@ -18,9 +18,14 @@ thiserror.workspace = true
 futures-channel = { version = "0.3", optional = true }
 futures-util = { version = "0.3", default-features = false, optional = true }
 tracing = { workspace = true, optional = true }
+# A toast goes after its time (a browser's timer on wasm).
+futures-timer = { version = "3", optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
 # The components rendered to HTML in tests (tests/ui.rs).
 dioxus-ssr = "=0.8.0-alpha.3"
 dioxus = { workspace = true, features = ["macro", "html", "signals", "hooks", "document"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+futures-timer = { version = "3", optional = true, features = ["wasm-bindgen"] }

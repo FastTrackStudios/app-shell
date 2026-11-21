@@ -454,9 +454,10 @@ fn on_a_phone_the_sidebar_is_a_drawer_behind_a_menu_button() {
         }
     });
     assert!(
-        !html.contains("data-sidebar"),
-        "closed until the menu opens it"
+        html.contains("data-open=\"false\""),
+        "shut until the menu or a swipe opens it"
     );
+    assert!(html.contains("data-sidebar=\"drawer\"") && !html.contains("data-sidebar=\"docked\""));
     assert!(html.contains("aria-label=\"Menu\""));
     assert!(html.contains("data-form=\"phone\""));
 }
@@ -496,4 +497,250 @@ fn the_top_bar_holds_the_apps_slots() {
         html.contains("grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr)"),
         "the search centred"
     );
+}
+
+// The phone layout: the foot, the drawer, sheets, menus, the palette, toasts.
+
+use app_shell::ui::{Destination, PaletteItem, PrimaryAction, Sheet, SheetSpec, use_sheet};
+
+fn destinations() -> Vec<Destination> {
+    vec![
+        Destination::new("drive", "Drive", icons::FOLDER),
+        Destination::new("search", "Search", icons::SEARCH),
+        Destination::new("tags", "Tags", icons::TAG).badge("3"),
+    ]
+}
+
+#[derive(Props, Clone, PartialEq)]
+struct PhoneLab {
+    form: FormFactor,
+    #[props(default)]
+    with_accessory: bool,
+}
+
+#[allow(non_snake_case)]
+fn PhoneShell(props: PhoneLab) -> Element {
+    rsx! {
+        AppShell {
+            title: "Files",
+            form: props.form,
+            destinations: destinations(),
+            destination: "search",
+            action: PrimaryAction::new("Upload", icons::PLUS, |_| {}),
+            accessory: props.with_accessory.then(|| rsx! { div { class: "uploads", "Uploading 2 files" } }),
+            sidebar: rsx! { Sidebar { SidebarItem { label: "Overview" } } },
+            p { "body" }
+        }
+    }
+}
+
+fn render_phone(form: FormFactor, with_accessory: bool) -> String {
+    let mut dom = VirtualDom::new_with_props(
+        PhoneShell,
+        PhoneLab {
+            form,
+            with_accessory,
+        },
+    );
+    dom.rebuild_in_place();
+    dioxus_ssr::render(&dom)
+}
+
+#[test]
+fn a_phone_has_a_tab_pill_of_destinations_and_a_round_button() {
+    let html = render_phone(FormFactor::Phone, false);
+    assert!(html.contains("class=\"as-pill\""));
+    assert_eq!(html.matches("class=\"as-pill-tab\"").count(), 3);
+    assert!(html.contains("aria-label=\"Search\" style=\"position: relative; flex: 1 1 0px; min-width: 0; height: 46px; border-radius: 23px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background-color: var(--as-selected)"), "the current one lit");
+    assert!(html.contains("aria-selected=\"true\""));
+    assert!(html.contains(">3</span>"), "a badge");
+    assert!(html.contains("class=\"as-round\"") && html.contains("aria-label=\"Upload\""));
+    assert!(
+        html.contains("env(safe-area-inset-bottom, 0px)"),
+        "clear of the home indicator"
+    );
+    assert!(
+        html.contains("padding-bottom: 12px; padding-bottom: max(12px"),
+        "a fallback first for Blitz"
+    );
+    assert!(!html.contains("class=\"as-accessory\""));
+}
+
+#[test]
+fn the_accessory_docks_over_the_pill_on_a_phone_and_under_the_content_on_a_desktop() {
+    let phone = render_phone(FormFactor::Phone, true);
+    let acc = phone.find("class=\"as-accessory\"").unwrap();
+    assert!(
+        acc < phone.find("class=\"as-pill\"").unwrap(),
+        "above the pill"
+    );
+    assert!(phone.contains("Uploading 2 files"));
+    let desk = render_phone(FormFactor::Desktop, true);
+    assert!(desk.contains("class=\"as-accessory\"") && desk.contains("Uploading 2 files"));
+    assert!(
+        !desk.contains("as-pill") && !desk.contains("as-round"),
+        "the sidebar holds the destinations"
+    );
+}
+
+#[test]
+fn on_a_phone_the_drawer_is_mounted_shut_off_screen() {
+    let html = render_phone(FormFactor::Phone, false);
+    assert!(html.contains("class=\"as-drawer\"") && html.contains("data-open=\"false\""));
+    assert!(html.contains("transform: translateX(-"), "off to the left");
+    assert!(
+        html.contains("touch-action: pan-y"),
+        "a horizontal swipe is the shell's"
+    );
+}
+
+/// What a test does to the shell once it is mounted.
+type ShellScript = Box<dyn Fn(app_shell::ui::Shell)>;
+
+thread_local! {
+    static SHEET_ACT: RefCell<Option<ShellScript>> = RefCell::new(None);
+}
+
+#[derive(Props, Clone, PartialEq)]
+struct SheetLab {
+    form: FormFactor,
+}
+
+#[component]
+fn Opener() -> Element {
+    let shell = use_shell();
+    let sheet = use_sheet();
+    use_hook(move || {
+        if let Some(f) = SHEET_ACT.with(|a| a.borrow_mut().take()) {
+            f(shell);
+        }
+        let _ = sheet;
+    });
+    rsx! {}
+}
+
+#[allow(non_snake_case)]
+fn SheetShell(props: SheetLab) -> Element {
+    rsx! {
+        AppShell {
+            title: "Files",
+            form: props.form,
+            palette: Callback::new(|()| vec![
+                PaletteItem::call("Upload files", Callback::new(|()| {})).keywords("new add"),
+                PaletteItem::call("New folder", Callback::new(|()| {})),
+            ]),
+            Opener {}
+        }
+    }
+}
+
+fn render_sheets(form: FormFactor, act: impl Fn(app_shell::ui::Shell) + 'static) -> String {
+    SHEET_ACT.with(|a| *a.borrow_mut() = Some(Box::new(act)));
+    let mut dom = VirtualDom::new_with_props(SheetShell, SheetLab { form });
+    dom.rebuild_in_place();
+    for _ in 0..4 {
+        dom.process_events();
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+    }
+    dioxus_ssr::render(&dom)
+}
+
+#[test]
+fn a_sheet_is_a_bottom_sheet_with_a_handle_on_a_phone_and_a_panel_on_a_desktop() {
+    let open = |s: app_shell::ui::Shell| {
+        s.open_sheet(
+            SheetSpec::new(|()| rsx! { p { class: "info", "About this file" } }).title("Info"),
+        );
+    };
+    let phone = render_sheets(FormFactor::Phone, open);
+    assert!(phone.contains("data-sheet=\"bottom\"") && phone.contains("data-detent=\"medium\""));
+    assert!(
+        phone.contains("class=\"as-grab\"")
+            && phone.contains("About this file")
+            && phone.contains(">Info</span>")
+    );
+    assert!(phone.contains("overflow-y: scroll"), "its body scrolls");
+    let desk = render_sheets(FormFactor::Desktop, open);
+    assert!(desk.contains("data-sheet=\"panel\"") && desk.contains("translate(-50%, -50%)"));
+    assert!(!desk.contains("as-grab") && desk.contains("aria-label=\"Close\""));
+}
+
+#[test]
+fn sheets_stack_the_lower_ones_set_back() {
+    let html = render_sheets(FormFactor::Phone, |s| {
+        s.open_sheet(SheetSpec::new(|()| rsx! { "first" }));
+        s.open_sheet(SheetSpec::new(|()| rsx! { "second" }).detents(
+            app_shell::gestures::Detent::Large,
+            &[app_shell::gestures::Detent::Large],
+        ));
+    });
+    assert_eq!(html.matches("data-sheet=\"bottom\"").count(), 2);
+    assert!(html.contains("scale(0.96)"), "the one under set back");
+    assert!(html.contains("data-detent=\"large\""));
+}
+
+#[test]
+fn a_menu_is_an_action_sheet_on_a_phone_and_a_popup_on_a_desktop() {
+    let items = || {
+        vec![
+            app_shell::ui::MenuItem::call("Rename", Callback::new(|()| {})),
+            app_shell::ui::MenuItem::call("Delete", Callback::new(|()| {})).danger(),
+        ]
+    };
+    let phone = render_sheets(FormFactor::Phone, move |s| s.menu(10.0, 10.0, items()));
+    assert!(phone.contains("class=\"as-action-list\"") && phone.contains("data-detent=\"fit\""));
+    assert!(phone.contains("min-height: 48px") && phone.contains(">Delete</span>"));
+    assert!(!phone.contains("class=\"as-popup\""));
+    let desk = render_sheets(FormFactor::Desktop, move |s| s.menu(10.0, 10.0, items()));
+    assert!(desk.contains("class=\"as-popup\"") && !desk.contains("as-action-list"));
+}
+
+#[test]
+fn the_palette_is_a_sheet_on_a_phone_and_near_the_top_on_a_desktop() {
+    let phone = render_sheets(FormFactor::Phone, |s| s.open_palette());
+    assert!(phone.contains("class=\"as-palette\"") && phone.contains("data-detent=\"large\""));
+    assert!(phone.contains(">Upload files</span>") && phone.contains(">New folder</span>"));
+    let desk = render_sheets(FormFactor::Desktop, |s| {
+        s.command(app_shell::Command::OpenPalette)
+    });
+    assert!(desk.contains("class=\"as-palette\"") && desk.contains("top: 12%"));
+}
+
+#[test]
+fn toasts_queue_and_show_one_at_a_time() {
+    let html = render_sheets(FormFactor::Phone, |s| {
+        s.toast("Uploaded 3 files");
+        s.show_toast(app_shell::ui::ToastSpec::new("Moved to Trash").action("Undo", |_| {}));
+    });
+    assert!(
+        html.contains("Uploaded 3 files") && !html.contains("Moved to Trash"),
+        "the first first"
+    );
+    assert!(
+        html.contains("role=\"status\"") && html.contains("env(safe-area-inset-top"),
+        "under the notch on a phone"
+    );
+}
+
+#[test]
+fn a_declared_sheet_opens_while_its_flag_is_set() {
+    #[component]
+    fn Declared(open: bool) -> Element {
+        rsx! {
+            AppShell { form: FormFactor::Phone,
+                Sheet { open, title: "Inspector", render: Callback::new(|()| rsx! { "details" }) }
+            }
+        }
+    }
+    let render = |open| {
+        let mut dom = VirtualDom::new_with_props(Declared, DeclaredProps { open });
+        dom.rebuild_in_place();
+        for _ in 0..4 {
+            dom.process_events();
+            dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+        }
+        dioxus_ssr::render(&dom)
+    };
+    assert!(render(true).contains(">Inspector</span>"));
+    assert!(!render(false).contains("Inspector"));
 }

@@ -24,6 +24,7 @@
 mod commands;
 mod drop;
 mod geometry;
+pub mod gestures;
 mod model;
 mod ops;
 mod repair;

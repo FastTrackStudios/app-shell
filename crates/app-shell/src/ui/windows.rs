@@ -138,3 +138,9 @@ pub struct WindowControls {
     /// the row's left instead of drawing its own.
     pub system_lights: Option<f32>,
 }
+
+/// The window's size in points, as the platform knows it: what
+/// `app-shell-native` puts in context (Blitz fires no `resize`), followed
+/// by the shell to choose the phone or the desktop layout.
+#[derive(Clone, Copy, PartialEq)]
+pub struct ViewportSize(pub Signal<(f64, f64)>);

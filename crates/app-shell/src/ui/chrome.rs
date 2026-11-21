@@ -166,6 +166,9 @@ pub fn TopBar(
     search: Option<Element>,
     /// At the right: buttons and view modes.
     actions: Option<Element>,
+    /// A phone's actions in place of `actions` (one or two: a phone's bar
+    /// has room for the title, back and little else).
+    phone_actions: Option<Element>,
     on_back: Option<EventHandler<()>>,
     on_forward: Option<EventHandler<()>>,
     #[props(default = true)] can_back: bool,
@@ -261,11 +264,13 @@ pub fn TopBar(
         }
     };
     if phone {
+        let actions = phone_actions.or(actions);
+        let notch = super::foot::top_pad(0.0);
         return rsx! {
             div {
                 class: "as-topbar",
                 "data-form": "phone",
-                style: "flex: none; display: flex; flex-direction: column; background-color: var(--as-topbar-bg); border-bottom: 1px solid var(--as-border);",
+                style: "flex: none; display: flex; flex-direction: column; background-color: var(--as-topbar-bg); border-bottom: 1px solid var(--as-border); {notch}",
                 div {
                     style: "height: var(--as-topbar-h); display: flex; align-items: center; gap: 2px; padding: 0 6px; min-width: 0;",
                     if lights_here { WindowLights {} }

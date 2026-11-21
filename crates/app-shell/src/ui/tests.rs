@@ -280,3 +280,151 @@ fn toggle_sidebar_hides_and_shows_it_on_a_desktop() {
     let heard = SIDEBAR.with(|s| s.borrow().iter().map(|x| x.open).collect::<Vec<_>>());
     assert_eq!(heard, vec![false, true]);
 }
+
+#[derive(Props, Clone, PartialEq)]
+struct PhoneProps {
+    start: Workspace,
+}
+
+#[allow(non_snake_case)]
+fn PhoneHarness(props: PhoneProps) -> Element {
+    let layout = use_signal(|| props.start.clone());
+    let kinds = TabKinds::new().with(TabKind::new("v", "V", |ctx: TabCtx| {
+        let shell = use_shell();
+        let first = ctx.pane.id.0 == "a";
+        use_hook(move || {
+            if first && let Some(script) = SCRIPT.with(|s| s.borrow_mut().take()) {
+                script(shell);
+            }
+        });
+        rsx! { "{ctx.pane.title}" }
+    }));
+    rsx! {
+        AppShell {
+            layout,
+            kinds,
+            form: FormFactor::Phone,
+            sidebar: rsx! { Sidebar { SidebarItem { label: "Home" } } },
+        }
+    }
+}
+
+fn run_phone(script: impl Fn(Shell) + 'static) {
+    SCRIPT.with(|s| *s.borrow_mut() = Some(Box::new(script)));
+    let mut dom = VirtualDom::new_with_props(
+        PhoneHarness,
+        PhoneProps {
+            start: tabs(&["a"]),
+        },
+    );
+    dom.rebuild_in_place();
+    for _ in 0..3 {
+        dom.process_events();
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+    }
+    assert!(SCRIPT.with(|s| s.borrow().is_none()), "the script ran");
+}
+
+#[test]
+fn a_swipe_from_the_edge_opens_the_drawer_under_the_finger() {
+    run_phone(|s| {
+        let mut vp = s.viewport;
+        vp.set((390.0, 844.0));
+        let mut g = s.gesture;
+        g.set(Some(Gesture::Drawer {
+            start: (5.0, 300.0),
+            from: 0.0,
+        }));
+        s.moved((165.0, 305.0));
+        let p = s.drawer_drag.peek().expect("following the finger");
+        assert!((p - 0.5).abs() < 0.01, "half of 320");
+        s.released((165.0, 305.0));
+        assert!(*s.drawer.peek(), "a flick past 60 points opens it");
+        assert!(s.drawer_drag.peek().is_none());
+        // Dragged back a little: stays; a flick left: shut.
+        g.set(Some(Gesture::Drawer {
+            start: (200.0, 300.0),
+            from: 1.0,
+        }));
+        s.moved((170.0, 300.0));
+        s.released((170.0, 300.0));
+        assert!(*s.drawer.peek());
+        g.set(Some(Gesture::Drawer {
+            start: (200.0, 300.0),
+            from: 1.0,
+        }));
+        s.moved((100.0, 300.0));
+        s.released((100.0, 300.0));
+        assert!(!*s.drawer.peek());
+    });
+}
+
+#[test]
+fn a_vertical_move_from_the_edge_is_the_pages_scroll() {
+    run_phone(|s| {
+        let mut vp = s.viewport;
+        vp.set((390.0, 844.0));
+        let mut g = s.gesture;
+        g.set(Some(Gesture::Drawer {
+            start: (5.0, 300.0),
+            from: 0.0,
+        }));
+        s.moved((9.0, 360.0));
+        assert!(s.gesture.peek().is_none(), "let go of");
+        assert!(s.drawer_drag.peek().is_none() && !*s.drawer.peek());
+    });
+}
+
+#[test]
+fn a_sheet_dragged_by_its_handle_settles_or_goes() {
+    run_phone(|s| {
+        let mut vp = s.viewport;
+        vp.set((390.0, 800.0));
+        let closed = std::rc::Rc::new(std::cell::Cell::new(false));
+        let seen = closed.clone();
+        let id = s.open_sheet(
+            super::SheetSpec::new(|()| rsx! { "x" }).on_close(move |()| seen.set(true)),
+        );
+        let mut g = s.gesture;
+        g.set(Some(Gesture::Sheet {
+            id: id.0,
+            start: (100.0, 400.0),
+        }));
+        s.moved((100.0, 100.0));
+        assert!(
+            (s.sheets.peek()[0].drag + 300.0).abs() < 0.01,
+            "follows the finger"
+        );
+        s.released((100.0, 100.0));
+        assert_eq!(s.sheets.peek()[0].detent, crate::gestures::Detent::Large);
+        assert_eq!(s.sheets.peek()[0].drag, 0.0);
+        g.set(Some(Gesture::Sheet {
+            id: id.0,
+            start: (100.0, 100.0),
+        }));
+        s.moved((100.0, 760.0));
+        s.released((100.0, 760.0));
+        assert!(s.sheets.peek().is_empty(), "dragged away");
+        assert!(closed.get(), "and told");
+    });
+}
+
+#[test]
+fn escape_closes_the_top_sheet_first() {
+    run_phone(|s| {
+        s.open_sheet(super::SheetSpec::new(|()| rsx! { "a" }));
+        s.open_sheet(super::SheetSpec::new(|()| rsx! { "b" }));
+        assert!(s.close_top_sheet());
+        assert_eq!(s.sheets.peek().len(), 1);
+        assert!(s.close_top_sheet());
+        assert!(!s.close_top_sheet(), "none left");
+    });
+}
+
+#[test]
+fn the_form_follows_the_width() {
+    assert_eq!(FormFactor::for_width(390.0), FormFactor::Phone);
+    assert_eq!(FormFactor::for_width(599.0), FormFactor::Phone);
+    assert_eq!(FormFactor::for_width(600.0), FormFactor::Desktop);
+    assert_eq!(FormFactor::for_width(1280.0), FormFactor::Desktop);
+}

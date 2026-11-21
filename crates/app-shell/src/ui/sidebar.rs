@@ -76,26 +76,62 @@ pub(crate) fn DockedSidebar(content: Element) -> Element {
     }
 }
 
-/// The sidebar as a drawer over the page (a phone): a scrim that closes
-/// it, the panel at the left.
+/// The sidebar as a drawer over the page (a phone): it slides in from
+/// the left edge under the finger (or the menu button) and goes the same
+/// way; a tap on the scrim closes it. Always mounted on a phone, so it
+/// can follow a swipe from its first point.
 #[component]
 pub(crate) fn DrawerSidebar(content: Element) -> Element {
     let shell = use_shell();
+    let open = *shell.drawer.read();
+    let drag = *shell.drawer_drag.read();
+    let p = drag.unwrap_or(if open { 1.0 } else { 0.0 });
+    let vw = shell.viewport().0;
+    let w = crate::gestures::drawer_width(if vw > 0.0 { vw } else { 390.0 });
+    let x = (p - 1.0) * w;
+    let shown = p > 0.0;
+    let events = if shown { "auto" } else { "none" };
+    let transition = if drag.is_some() {
+        "none".to_owned()
+    } else {
+        "transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.28s ease".to_owned()
+    };
+    let pad = super::foot::top_pad(8.0);
+    let grab = move |event: PointerEvent| {
+        if !*shell.drawer.peek() {
+            return;
+        }
+        let p = event.client_coordinates();
+        let mut g = shell.gesture;
+        g.set(Some(Gesture::Drawer {
+            start: (p.x, p.y),
+            from: 1.0,
+        }));
+    };
     rsx! {
         div {
             class: "as-drawer",
-            style: "position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 45;",
+            "data-open": "{open}",
+            style: "position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 45; pointer-events: none;",
             div {
                 class: "as-scrim",
-                style: "position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: var(--as-overlay);",
-                onclick: move |_| shell.set_drawer(false),
+                style: "position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: var(--as-overlay); opacity: {p}; pointer-events: {events}; transition: {transition};",
+                onpointerdown: grab,
+                onclick: move |_| {
+                    let mut dragged = shell.drawer_dragged;
+                    if dragged.replace(false) {
+                        return;
+                    }
+                    shell.set_drawer(false);
+                },
             }
             div {
                 class: "as-sidebar",
                 "data-sidebar": "drawer",
-                style: "position: absolute; left: 0; top: 0; bottom: 0; width: 300px; max-width: 85%; box-shadow: 8px 0 32px rgba(0, 0, 0, 0.4); {PANEL}",
+                style: "position: absolute; left: 0; top: 0; bottom: 0; width: {w}px; transform: translateX({x}px); transition: {transition}; pointer-events: {events}; box-shadow: 8px 0 32px rgba(0, 0, 0, 0.4); {PANEL} {pad}",
+                onpointerdown: grab,
                 div {
-                    style: "flex: none; height: var(--as-topbar-h); display: flex; align-items: center; justify-content: flex-end; padding: 0 6px;",
+                    style: "flex: none; height: 36px; display: flex; align-items: center; justify-content: flex-end; padding: 0 6px;",
                     BarButton { icon: icons::X, label: "Close menu", on_press: move |()| shell.set_drawer(false) }
                 }
                 {content}

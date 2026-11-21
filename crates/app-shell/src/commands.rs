@@ -45,6 +45,8 @@ pub enum Command {
     OpenSwitcher,
     /// Show or hide the sidebar (the UI's; the layout does not change).
     ToggleSidebar,
+    /// Open the command palette (the UI's; the layout does not change).
+    OpenPalette,
 }
 
 impl Command {
@@ -75,6 +77,7 @@ impl Command {
             Self::ToggleDock(_) => "Toggle bottom dock".into(),
             Self::OpenSwitcher => "Show all tabs".into(),
             Self::ToggleSidebar => "Toggle sidebar".into(),
+            Self::OpenPalette => "Open anything".into(),
         }
     }
 }
@@ -97,7 +100,9 @@ impl Workspace {
         let before = self.clone();
         let active = self.active.clone();
         match command {
-            Command::OpenSwitcher | Command::ToggleSidebar => return Ok(Ran::Ui),
+            Command::OpenSwitcher | Command::ToggleSidebar | Command::OpenPalette => {
+                return Ok(Ran::Ui);
+            }
             Command::CloseTab => {
                 if let Some(a) = &active {
                     self.close(a)?;
@@ -286,6 +291,7 @@ pub trait Keymap {
 /// | Mod+Shift+Enter | zoom the stack |
 /// | Mod+Shift+E | show all tabs (the switcher) |
 /// | Mod+Shift+L | show or hide the sidebar |
+/// | Mod+K | open anything (the command palette) |
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DefaultKeymap;
 
@@ -319,6 +325,7 @@ impl Keymap for DefaultKeymap {
             ("Enter", true) => Some(Command::ToggleZoom),
             ("e", true) => Some(Command::OpenSwitcher),
             ("l", true) => Some(Command::ToggleSidebar),
+            ("k", false) => Some(Command::OpenPalette),
             (digit, false) => match digit.parse::<usize>() {
                 Ok(9) => Some(Command::GotoTab(usize::MAX)),
                 Ok(n @ 1..=8) => Some(Command::GotoTab(n - 1)),

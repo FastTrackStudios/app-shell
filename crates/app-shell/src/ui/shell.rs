@@ -6,14 +6,24 @@ use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use super::chrome::TopBar;
+use super::foot::{DeskAccessory, Destination, PhoneFoot, PrimaryAction};
 use super::kinds::{TabKind, TabKinds};
+use super::overlay::{
+    PaletteItem, SheetContent, SheetEntry, SheetId, SheetLayer, SheetSpec, ToastEntry, ToastLayer,
+    ToastSpec,
+};
+use super::popup::MenuAction;
 use super::popup::{MenuItem, Popup, PopupContent, PopupLayer};
 use super::sidebar::{DockedSidebar, DrawerSidebar, SIDEBAR_MAX, SIDEBAR_MIN, SidebarState};
 use super::stack::DragLayer;
 use super::switcher::Switcher;
 use super::window::{InPageWindows, SoloView, WindowBody};
-use super::windows::{HubMessage, LayoutHub, Windows};
+use super::windows::{HubMessage, LayoutHub, ViewportSize, Windows};
 use crate::commands::{Command, DefaultKeymap, KeyChord, Keymap, Ran};
+use crate::gestures::{
+    DRAG_SLOP, Detent, PHONE_BELOW, Settle, drawer_progress, drawer_settles_open, drawer_width,
+    sheet_settle, starts_edge_swipe,
+};
 use crate::model::{Axis, GroupId, Pane, PaneId, Rect, Side, SplitId, WindowId, Workspace};
 use crate::ops::{Dest, Target, WorkspaceError};
 use crate::theme::Theme;
@@ -31,7 +41,7 @@ impl FormFactor {
     /// A window this wide, in points: a phone under 600.
     #[must_use]
     pub fn for_width(width: f64) -> Self {
-        if width < 600.0 {
+        if width < PHONE_BELOW {
             Self::Phone
         } else {
             Self::Desktop
@@ -114,6 +124,11 @@ pub(crate) enum Gesture {
     },
     /// The docked sidebar's edge dragged.
     Sidebar { start: (f64, f64), width: f32 },
+    /// A phone's drawer under the finger: opening from the edge (`from`
+    /// 0) or closing (`from` 1).
+    Drawer { start: (f64, f64), from: f64 },
+    /// A bottom sheet dragged by its handle.
+    Sheet { id: u64, start: (f64, f64) },
     /// A pop-out drawn in the page, moved by its title bar.
     Window {
         window: WindowId,
@@ -150,6 +165,7 @@ struct Hooks {
     on_command: Option<Callback<Command, bool>>,
     on_new_tab: Option<EventHandler<GroupId>>,
     on_sidebar: Option<EventHandler<SidebarState>>,
+    palette: Option<Callback<(), Vec<PaletteItem>>>,
     kinds: TabKinds,
     keymap: KeymapHandle,
     hub: Option<LayoutHub>,
@@ -180,6 +196,18 @@ pub struct Shell {
     pub(crate) sidebar_w: Signal<f32>,
     /// The phone's drawer is out.
     pub(crate) drawer: Signal<bool>,
+    /// How open the drawer is under the finger (0 to 1), while dragged.
+    pub(crate) drawer_drag: Signal<Option<f64>>,
+    /// The last drawer gesture moved (a tap on the scrim closes; a drag
+    /// that let go does not).
+    pub(crate) drawer_dragged: CopyValue<bool>,
+    /// The sheets open, the last on top.
+    pub(crate) sheets: Signal<Vec<SheetEntry>>,
+    /// The toasts waiting, the first on show.
+    pub(crate) toasts: Signal<Vec<ToastEntry>>,
+    next_id: CopyValue<u64>,
+    /// The window's size, points (0 until measured).
+    pub(crate) viewport: Signal<(f64, f64)>,
     hooks: CopyValue<Hooks>,
 }
 
@@ -247,6 +275,10 @@ impl Shell {
         if on_command.is_some_and(|f| f.call(command)) {
             return;
         }
+        if command == Command::OpenPalette {
+            self.open_palette();
+            return;
+        }
         if command == Command::ToggleSidebar {
             if self.has_sidebar() {
                 if self.form() == FormFactor::Phone {
@@ -292,9 +324,131 @@ impl Shell {
         s.set(show);
     }
 
-    /// Open a menu at `(x, y)` (window points) holding `items`.
+    /// Open a menu holding `items`: at `(x, y)` (window points) on a
+    /// desktop, an action sheet on a phone.
     pub fn menu(&self, x: f64, y: f64, items: Vec<MenuItem>) {
-        self.popup(x, y, PopupContent::Menu(items));
+        if *self.form.peek() == FormFactor::Phone {
+            self.close_popup();
+            self.open_sheet(SheetSpec {
+                title: None,
+                detent: Detent::Fit,
+                detents: vec![Detent::Fit],
+                content: SheetContent::Menu(items),
+                on_close: None,
+            });
+        } else {
+            self.popup(x, y, PopupContent::Menu(items));
+        }
+    }
+
+    /// Open a sheet over everything open: a bottom sheet on a phone, a
+    /// centred panel on a desktop. See [`super::use_sheet`] for one that
+    /// closes with the component that opened it.
+    pub fn open_sheet(&self, spec: SheetSpec) -> SheetId {
+        let mut next = self.next_id;
+        let n = *next.peek();
+        next.set(n.saturating_add(1));
+        let id = SheetId(n);
+        let detent = spec.detent;
+        let mut sheets = self.sheets;
+        sheets.write().push(SheetEntry {
+            id,
+            spec,
+            detent,
+            drag: 0.0,
+        });
+        id
+    }
+
+    /// Close the sheet `id`, telling its `on_close`.
+    pub fn close_sheet(&self, id: SheetId) {
+        let on_close = self
+            .sheets
+            .peek()
+            .iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.spec.on_close);
+        self.close_sheet_quiet(id);
+        if let Some(f) = on_close {
+            f.call(());
+        }
+    }
+
+    /// Close the sheet `id` without telling it (its owner closed it).
+    pub(crate) fn close_sheet_quiet(&self, id: SheetId) {
+        let mut sheets = self.sheets;
+        if sheets.peek().iter().any(|s| s.id == id) {
+            sheets.write().retain(|s| s.id != id);
+        }
+    }
+
+    /// Close the sheet on top, if any; whether there was one.
+    pub fn close_top_sheet(&self) -> bool {
+        let top = self.sheets.peek().last().map(|s| s.id);
+        top.inspect(|id| self.close_sheet(*id)).is_some()
+    }
+
+    /// Do what a menu row or a palette entry says.
+    pub(crate) fn run_action(&self, action: Option<MenuAction>) {
+        match action {
+            Some(MenuAction::Command {
+                pane: Some(p),
+                command,
+            }) => self.command_on(&p, command),
+            Some(MenuAction::Command {
+                pane: None,
+                command,
+            }) => self.command(command),
+            Some(MenuAction::Call(f)) => f.call(()),
+            None => {}
+        }
+    }
+
+    /// Show `message` for a moment, after the toasts before it.
+    pub fn toast(&self, message: impl Into<String>) {
+        self.show_toast(ToastSpec::new(message));
+    }
+
+    /// Show a toast (with an action, a duration of its own).
+    pub fn show_toast(&self, spec: ToastSpec) {
+        let mut next = self.next_id;
+        let n = *next.peek();
+        next.set(n.saturating_add(1));
+        let mut toasts = self.toasts;
+        toasts.write().push(ToastEntry { id: n, spec });
+    }
+
+    /// Open the command palette with the app's entries (`palette`):
+    /// a sheet on a phone, a panel near the top on a desktop.
+    pub fn open_palette(&self) {
+        let items = self
+            .hooks
+            .peek()
+            .palette
+            .map(|f| f.call(()))
+            .unwrap_or_default();
+        self.close_popup();
+        self.open_sheet(SheetSpec {
+            title: None,
+            detent: Detent::Large,
+            detents: vec![Detent::Large],
+            content: SheetContent::Palette(items),
+            on_close: None,
+        });
+    }
+
+    /// Close what floats over the page for a navigation: the popup, the
+    /// drawer, the switcher.
+    pub fn close_overlays(&self) {
+        self.close_popup();
+        self.set_drawer(false);
+        self.show_switcher(false);
+    }
+
+    /// The window's size, points (`(0, 0)` until measured).
+    #[must_use]
+    pub fn viewport(&self) -> (f64, f64) {
+        *self.viewport.read()
     }
 
     /// Open a popup at `(x, y)` (window points).
@@ -404,7 +558,9 @@ impl Shell {
         let tabs = self.tabs_shown();
         match keymap.0.command(chord) {
             // Without tabs, only the commands that are not about tabs.
-            Some(command) if tabs || command == Command::ToggleSidebar => {
+            Some(command)
+                if tabs || matches!(command, Command::ToggleSidebar | Command::OpenPalette) =>
+            {
                 self.command(command);
                 true
             }
@@ -455,6 +611,24 @@ impl Shell {
                     Side::Bottom | Side::Top => start.1 - at.1,
                 };
                 self.apply_quiet(|w| w.set_dock_size(side, size + narrow(delta)));
+            }
+            Some(Gesture::Drawer { start, from }) => {
+                let (dx, dy) = (at.0 - start.0, at.1 - start.1);
+                let mut drag = self.drawer_drag;
+                // A vertical move first is the page's scroll, not the drawer.
+                if drag.peek().is_none() && dy.abs() > DRAG_SLOP && dy.abs() > dx.abs() {
+                    gesture.set(None);
+                } else if dx.abs() >= DRAG_SLOP || drag.peek().is_some() {
+                    let w = drawer_width(self.viewport.peek().0.max(320.0));
+                    drag.set(Some(drawer_progress(from, dx, w)));
+                }
+            }
+            Some(Gesture::Sheet { id, start }) => {
+                let dy = at.1 - start.1;
+                let mut sheets = self.sheets;
+                if let Some(e) = sheets.write().iter_mut().find(|e| e.id.0 == id) {
+                    e.drag = dy;
+                }
             }
             Some(Gesture::Sidebar { start, width }) => {
                 let next = (width + narrow(at.0 - start.0)).clamp(SIDEBAR_MIN, SIDEBAR_MAX);
@@ -525,6 +699,32 @@ impl Shell {
             Gesture::Sidebar { .. } => {
                 let width = *self.sidebar_w.peek();
                 self.set_sidebar(SidebarState { open: true, width });
+            }
+            Gesture::Drawer { start, from } => {
+                let dx = at.0 - start.0;
+                let w = drawer_width(self.viewport.peek().0.max(320.0));
+                let mut dragged = self.drawer_dragged;
+                dragged.set(dx.abs() >= DRAG_SLOP);
+                let mut drag = self.drawer_drag;
+                drag.set(None);
+                self.set_drawer(drawer_settles_open(from, dx, w));
+            }
+            Gesture::Sheet { id, start } => {
+                let dy = at.1 - start.1;
+                let h = self.viewport.peek().1.max(320.0);
+                let entry = self.sheets.peek().iter().find(|e| e.id.0 == id).cloned();
+                if let Some(e) = entry {
+                    match sheet_settle(e.detent, &e.spec.detents, dy, h) {
+                        Settle::Dismiss => self.close_sheet(e.id),
+                        Settle::Stay(d) => {
+                            let mut sheets = self.sheets;
+                            if let Some(x) = sheets.write().iter_mut().find(|x| x.id.0 == id) {
+                                x.detent = d;
+                                x.drag = 0.0;
+                            }
+                        }
+                    }
+                }
             }
             _ => self.changed(),
         }
@@ -623,6 +823,20 @@ pub fn AppShell(
     sidebar_state: Option<SidebarState>,
     /// Hears the sidebar shown, hidden or resized (to keep it).
     on_sidebar: Option<EventHandler<SidebarState>>,
+    /// The app's primary destinations: on a phone, the tab pill at the
+    /// foot (on a desktop the sidebar holds them).
+    #[props(default)]
+    destinations: Vec<Destination>,
+    /// The destination on show (lit in the pill).
+    destination: Option<String>,
+    on_destination: Option<EventHandler<String>>,
+    /// The round button beside the pill (a phone): the primary action.
+    action: Option<PrimaryAction>,
+    /// Docked over the pill on a phone, under the content on a desktop:
+    /// Now Playing, a transport, an upload's progress.
+    accessory: Option<Element>,
+    /// The command palette's entries (Mod+K, `Shell::open_palette`).
+    palette: Option<Callback<(), Vec<PaletteItem>>>,
     /// The content area, without a `layout` or with tabs off.
     children: Element,
 ) -> Element {
@@ -632,7 +846,8 @@ pub fn AppShell(
     let has_layout = layout.is_some();
     let layout = layout.unwrap_or(own_layout);
     let window_id = use_signal(|| window.clone());
-    let measured = use_signal(|| None::<FormFactor>);
+    let given_size = try_use_context::<ViewportSize>();
+    let measured = use_signal(|| (0.0_f64, 0.0_f64));
     let mut form_sig = use_signal(|| form.unwrap_or(FormFactor::Desktop));
     let start = sidebar_state.unwrap_or_default();
     let hooks = use_hook(|| CopyValue::new(Hooks::default()));
@@ -642,6 +857,7 @@ pub fn AppShell(
         on_command,
         on_new_tab,
         on_sidebar,
+        palette,
         kinds,
         keymap,
         hub: hub.clone(),
@@ -660,9 +876,23 @@ pub fn AppShell(
         sidebar_open: Signal::new(start.open),
         sidebar_w: Signal::new(start.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX)),
         drawer: Signal::new(false),
+        drawer_drag: Signal::new(None),
+        drawer_dragged: CopyValue::new(false),
+        sheets: Signal::new(Vec::new()),
+        toasts: Signal::new(Vec::new()),
+        next_id: CopyValue::new(1),
+        viewport: Signal::new((0.0, 0.0)),
         hooks,
     });
-    let want = form.or(*measured.read()).unwrap_or(FormFactor::Desktop);
+    // The window's size: the platform's (native), else measured here.
+    let size = given_size.map_or_else(|| *measured.read(), |v| *v.0.read());
+    let mut viewport = shell.viewport;
+    if *viewport.peek() != size {
+        viewport.set(size);
+    }
+    let want = form
+        .or((size.0 > 0.0).then(|| FormFactor::for_width(size.0)))
+        .unwrap_or(FormFactor::Desktop);
     if *form_sig.peek() != want {
         form_sig.set(want);
     }
@@ -748,12 +978,13 @@ pub fn AppShell(
     let tabs_now = shell.tabs_shown();
     let switcher = *shell.switcher.read() && tabs_now;
     let docked = !phone && sidebar.is_some() && *shell.sidebar_open.read();
-    let drawer = phone && sidebar.is_some() && *shell.drawer.read();
+    let drawer = phone && sidebar.is_some();
+    let touch = if phone { " touch-action: pan-y;" } else { "" };
     let style = format!(
         "{} position: relative; width: 100%; height: 100%; display: flex; flex-direction: row; \
          overflow: hidden; background-color: var(--as-bg); color: var(--as-text); \
          font-family: var(--as-font); font-size: var(--as-font-size); outline: none; \
-         user-select: none; box-sizing: border-box;",
+         user-select: none; box-sizing: border-box;{touch}",
         theme.style()
     );
     let window_for_body = window.clone();
@@ -768,22 +999,41 @@ pub fn AppShell(
             style: "{style}",
             tabindex: 0,
             onmounted: move |event| {
-                if form.is_some() {
-                    return;
-                }
                 let mut measured = measured;
                 spawn(async move {
                     if let Ok(rect) = event.data().get_client_rect().await {
-                        measured.set(Some(FormFactor::for_width(rect.size.width)));
+                        measured.set((rect.size.width, rect.size.height));
                     }
                 });
+            },
+            // A browser tells the shell when the window changes size
+            // (Blitz does not: the native side gives a `ViewportSize`).
+            onresize: move |event| {
+                if let Ok(size) = event.data().get_border_box_size() {
+                    let mut measured = measured;
+                    if *measured.peek() != (size.width, size.height) {
+                        measured.set((size.width, size.height));
+                    }
+                }
+            },
+            onpointerdown: move |event| {
+                let p = event.client_coordinates();
+                if shell.form() == FormFactor::Phone
+                    && shell.has_sidebar()
+                    && !*shell.drawer.peek()
+                    && shell.gesture.peek().is_none()
+                    && starts_edge_swipe(p.x)
+                {
+                    let mut g = shell.gesture;
+                    g.set(Some(Gesture::Drawer { start: (p.x, p.y), from: 0.0 }));
+                }
             },
             onkeydown: move |event| {
                 if shell.key(&chord_of(&event)) {
                     event.prevent_default();
                     event.stop_propagation();
                 }
-                if event.key().to_string() == "Escape" {
+                if event.key().to_string() == "Escape" && !shell.close_top_sheet() {
                     shell.close_popup();
                     shell.show_switcher(false);
                     shell.set_drawer(false);
@@ -828,6 +1078,17 @@ pub fn AppShell(
                         InPageWindows {}
                     }
                 }
+                if phone {
+                    PhoneFoot {
+                        accessory: accessory.clone(),
+                        destinations: destinations.clone(),
+                        current: destination.clone(),
+                        on_destination,
+                        action: action.clone(),
+                    }
+                } else if let Some(acc) = accessory.clone() {
+                    DeskAccessory { accessory: acc }
+                }
             }
             if drawer {
                 if let Some(content) = sidebar.clone() {
@@ -839,6 +1100,8 @@ pub fn AppShell(
                 Switcher {}
             }
             PopupLayer {}
+            SheetLayer {}
+            ToastLayer {}
         }
     }
 }
