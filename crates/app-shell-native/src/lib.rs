@@ -30,7 +30,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
-use app_shell::ui::{HubMessage, LayoutHub, WindowControls, WindowSystem, Windows};
+use app_shell::ui::{HubMessage, LIGHTS_WIDTH, LayoutHub, WindowControls, WindowSystem, Windows};
 use app_shell::{Rect, WindowId};
 use blitz_shell::{BlitzShellEvent, BlitzShellProxy, View, WindowConfig};
 use dioxus::core::ScopeId;
@@ -44,6 +44,8 @@ use dioxus_native::{
     DioxusDocument, DioxusNativeApplication, DioxusNativeEvent, DioxusNativeWindowRenderer,
     DocumentConfig,
 };
+use futures_channel::mpsc::{UnboundedSender, unbounded};
+use futures_util::StreamExt;
 
 #[cfg(target_os = "macos")]
 use dioxus_native::winit::platform::macos::ApplicationHandlerExtMacOS;
@@ -91,6 +93,7 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         open: RefCell::new(Vec::new()),
         hub: LayoutHub::new(),
         decorated: config.system_decorations,
+        focus: RefCell::new(Vec::new()),
     });
     let vdom = VirtualDom::new_with_props(
         MainRoot,
@@ -100,10 +103,12 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         },
     );
     let doc = DioxusDocument::new(vdom, document_config());
-    let attributes = WindowAttributes::default()
-        .with_title(config.title.clone())
-        .with_decorations(config.system_decorations)
-        .with_surface_size(LogicalSize::new(config.size.0, config.size.1));
+    let attributes = frame(
+        WindowAttributes::default()
+            .with_title(config.title.clone())
+            .with_surface_size(LogicalSize::new(config.size.0, config.size.1)),
+        config.system_decorations,
+    );
     let window =
         WindowConfig::with_attributes(Box::new(doc), DioxusNativeWindowRenderer::new(), attributes);
     let app = App {
@@ -149,9 +154,21 @@ struct Desk {
     open: RefCell<Vec<(WindowId, Arc<dyn OsWindow>)>>,
     hub: LayoutHub,
     decorated: bool,
+    /// Each window's root, told when its window gains or loses the focus.
+    focus: RefCell<Vec<(OsId, UnboundedSender<bool>)>>,
 }
 
 impl Desk {
+    /// The OS window `os` gained or lost the focus.
+    fn focused(&self, os: OsId, on: bool) {
+        self.focus.borrow_mut().retain(|(_, s)| !s.is_closed());
+        for (w, s) in self.focus.borrow().iter() {
+            if *w == os {
+                let _ = s.unbounded_send(on);
+            }
+        }
+    }
+
     fn ask(&self, ask: Ask) {
         self.requests.borrow_mut().push(ask);
         self.wake.wake_up();
@@ -182,21 +199,93 @@ impl PartialEq for DeskHandle {
     }
 }
 
-/// The controls of `window`, closing it with `close`.
-fn controls(window: &Arc<dyn OsWindow>, close: Callback<()>) -> WindowControls {
+/// A window's frame: the system's (`decorated`), or the shell's top bar.
+/// On macOS the system's traffic lights stay, over a transparent title
+/// bar the content runs under (placed in the top bar's row by
+/// [`fit_lights`]); elsewhere the window has no system frame and the
+/// shell draws the lights.
+fn frame(attributes: WindowAttributes, decorated: bool) -> WindowAttributes {
+    if decorated {
+        return attributes.with_decorations(true);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        attributes.with_platform_attributes(Box::new(
+            dioxus_native::winit::platform::macos::WindowAttributesMacOS::default()
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true)
+                .with_title_hidden(true),
+        ))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        attributes.with_decorations(false)
+    }
+}
+
+/// Puts macOS's traffic lights in the top bar's row; nothing elsewhere.
+/// `AppKit` lays its title bar out again on a resize, so this runs after
+/// each.
+fn fit_lights(window: &dyn OsWindow, decorated: bool) {
+    #[cfg(target_os = "macos")]
+    if !decorated && window.fullscreen().is_none() {
+        mac::fit_traffic_lights(
+            window.rwh_06_window_handle(),
+            Some(app_shell::ui::TOP_BAR_H),
+            app_shell::ui::LIGHTS_LEFT,
+        );
+    }
+    let _ = (window, decorated);
+}
+
+/// The controls of `window`, closing it with `close`, its lights lit
+/// while `focused`.
+fn controls(
+    window: &Arc<dyn OsWindow>,
+    close: Callback<()>,
+    focused: Signal<bool>,
+) -> WindowControls {
     let (mini, zoom, drag) = (window.clone(), window.clone(), window.clone());
+    let system = cfg!(target_os = "macos");
     WindowControls {
-        minimize: Some(Callback::new(move |()| mini.set_minimized(true))),
+        // On macOS the system's own lights do these.
+        minimize: (!system).then(|| Callback::new(move |()| mini.set_minimized(true))),
         toggle_maximize: Some(Callback::new(move |()| {
             zoom.set_maximized(!zoom.is_maximized());
         })),
-        close: Some(close),
+        close: (!system).then_some(close),
         drag: Some(Callback::new(move |()| {
             if let Err(error) = drag.drag_window() {
                 tracing::debug!(app_shell.drag = %error, "the platform refused a window drag");
             }
         })),
+        focused: Some(focused),
+        #[allow(clippy::cast_possible_truncation, clippy::as_conversions)]
+        system_lights: system.then_some(LIGHTS_WIDTH as f32),
     }
+}
+
+/// A window root's frame: its focus heard from the event loop, and its
+/// controls in context (unless the system draws the frame).
+fn use_frame(desk: &Rc<Desk>, window: &Arc<dyn OsWindow>, close: Callback<()>) {
+    let focused = use_signal(|| true);
+    let desk = desk.clone();
+    let window = window.clone();
+    use_hook(move || {
+        let (tx, mut rx) = unbounded::<bool>();
+        desk.focus.borrow_mut().push((window.id(), tx));
+        spawn(async move {
+            let mut focused = focused;
+            while let Some(on) = rx.next().await {
+                if *focused.peek() != on {
+                    focused.set(on);
+                }
+            }
+        });
+        if !desk.decorated {
+            provide_context(controls(&window, close, focused));
+        }
+    });
 }
 
 #[derive(Props, Clone, PartialEq)]
@@ -214,17 +303,13 @@ fn MainRoot(props: MainRootProps) -> Element {
     use_context_provider(|| desk.hub.clone());
     let window = dioxus_native::use_window();
     let quit = desk.clone();
-    let decorated = desk.decorated;
     let seen = desk.clone();
+    let main = window.clone();
     use_hook(move || {
-        *seen.main.borrow_mut() = Some(window.clone());
-        if !decorated {
-            provide_context(controls(
-                &window,
-                Callback::new(move |()| quit.ask(Ask::Quit)),
-            ));
-        }
+        *seen.main.borrow_mut() = Some(main.clone());
+        fit_lights(main.as_ref(), seen.decorated);
     });
+    use_frame(&desk, &window, Callback::new(move |()| quit.ask(Ask::Quit)));
     (props.app)()
 }
 
@@ -232,12 +317,24 @@ fn MainRoot(props: MainRootProps) -> Element {
 struct PopoutRootProps {
     app: fn(WindowId) -> Element,
     id: WindowId,
+    desk: DeskHandle,
 }
 
-/// A pop-out's root: its context is put in by [`App::open`]; then the
-/// app's pop-out component.
+/// A pop-out's root: the hub and the OS window are put in by
+/// [`App::open`]; its frame here; then the app's pop-out component.
 #[allow(non_snake_case, clippy::needless_pass_by_value)]
 fn PopoutRoot(props: PopoutRootProps) -> Element {
+    let desk = props.desk.0.clone();
+    let window = use_context::<Arc<dyn OsWindow>>();
+    // Closing a pop-out gives its tabs back: the main window's shell hears
+    // it, and closes this window.
+    let hub = desk.hub.clone();
+    let closing = props.id.clone();
+    use_frame(
+        &desk,
+        &window,
+        Callback::new(move |()| hub.tell_main(HubMessage::Closed(closing.clone()))),
+    );
     (props.app)(props.id.clone())
 }
 
@@ -306,10 +403,12 @@ impl App {
             return;
         }
         let (w, h) = bounds.map_or((640.0, 480.0), |b| (b.w, b.h));
-        let mut attributes = WindowAttributes::default()
-            .with_title(title.to_owned())
-            .with_decorations(self.desk.decorated)
-            .with_surface_size(LogicalSize::new(f64::from(w), f64::from(h)));
+        let mut attributes = frame(
+            WindowAttributes::default()
+                .with_title(title.to_owned())
+                .with_surface_size(LogicalSize::new(f64::from(w), f64::from(h))),
+            self.desk.decorated,
+        );
         if let Some(b) = bounds {
             attributes =
                 attributes.with_position(LogicalPosition::new(f64::from(b.x), f64::from(b.y)));
@@ -319,6 +418,7 @@ impl App {
             PopoutRootProps {
                 app: self.popout,
                 id: id.clone(),
+                desk: DeskHandle(self.desk.clone()),
             },
         );
         let doc = DioxusDocument::new(vdom, document_config());
@@ -337,24 +437,14 @@ impl App {
             proxy: self.own.clone(),
         });
         let hub = self.desk.hub.clone();
-        let decorated = self.desk.decorated;
         let os_window = Arc::clone(&window);
-        let closing = id.clone();
         doc.vdom.in_scope(ScopeId::ROOT, move || {
             provide_context(head);
             provide_context(shell);
-            provide_context(hub.clone());
-            if !decorated {
-                // Closing a pop-out gives its tabs back: the main window's
-                // shell hears it, and closes this window.
-                let hub = hub.clone();
-                provide_context(controls(
-                    &os_window,
-                    Callback::new(move |()| hub.tell_main(HubMessage::Closed(closing.clone()))),
-                ));
-            }
+            provide_context(hub);
             provide_context(os_window);
         });
+        fit_lights(window.as_ref(), self.desk.decorated);
         doc.initial_build();
         view.resume();
         view.request_redraw();
@@ -482,6 +572,21 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, window: OsId, event: WindowEvent) {
+        match &event {
+            WindowEvent::Focused(on) => self.desk.focused(window, *on),
+            // AppKit lays its title bar out again on a resize.
+            WindowEvent::SurfaceResized(_) => {
+                let os = self
+                    .popouts
+                    .get(&window)
+                    .map(|o| Arc::clone(&o.view.window))
+                    .or_else(|| self.desk.main.borrow().clone());
+                if let Some(os) = os {
+                    fit_lights(os.as_ref(), self.desk.decorated);
+                }
+            }
+            _ => {}
+        }
         if self.popouts.contains_key(&window) {
             self.popout_event(window, event);
             self.asks(event_loop);
@@ -546,6 +651,9 @@ impl dioxus::document::Document for Head {
         true
     }
 }
+
+#[cfg(target_os = "macos")]
+mod mac;
 
 /// A screen length as the model's points (screens fit an `f32`).
 #[allow(clippy::cast_possible_truncation, clippy::as_conversions)]

@@ -164,6 +164,10 @@ dependencies = [
  "blitz-shell",
  "dioxus",
  "dioxus-native",
+ "futures-channel",
+ "futures-util",
+ "objc2-app-kit",
+ "objc2-foundation",
  "tracing",
 ]
 

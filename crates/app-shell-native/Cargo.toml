@@ -17,3 +17,11 @@ dioxus-native = { workspace = true, features = ["vello", "system-fonts", "svg", 
 blitz-shell = { version = "=0.3.0-beta.4", default-features = false }
 blitz-html = "=0.3.0-beta.4"
 tracing.workspace = true
+futures-channel = "0.3"
+futures-util = { version = "0.3", default-features = false }
+
+# A Mac window's own traffic lights, placed in the top bar's row
+# (src/mac.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSView", "NSWindow", "NSButton", "NSControl"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
