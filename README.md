@@ -78,10 +78,46 @@ layout written by an older or newer app, or edited by hand, still opens.
   headings that fold (`SidebarSection`), rows with an icon, a label, an
   optional count and a selected highlight (`SidebarItem`), and a `footer`
   slot.
-  - **Desktop:** docked, resizable by its edge (double press resets the
-    width) and collapsible (the top bar's button, Mod+Shift+L); `on_sidebar`
-    hears each change so the app can keep it.
+  - **Desktop:** docked, resizable by its edge (a line lights under the
+    pointer; a double press resets the width). It has two widths: the
+    full sidebar and a **rail** of icons (Architect's ribbon). The top
+    bar's button and Mod+Shift+L fold it to the rail and back. Dragging
+    the edge narrower than `SIDEBAR_SNAP` folds it too, and dragging the
+    rail's edge out unfolds it. The sidebar never takes the page's last
+    `SIDEBAR_PAGE_ROOM` points. Until the person or the app chooses
+    (`SidebarState::rail` is `None`), a window narrower than
+    `SIDEBAR_FOLD_BELOW` starts folded. Folded, the top bar runs across
+    the window with the traffic lights at its start. The rail shows each
+    row's icon, its name in a tip after a rest (or at once on keyboard
+    focus), a badge as a dot and a section as a thin rule; nested rows
+    hide. `on_sidebar` hears each change so the app can keep it, and
+    `use_sidebar_mode()` lets the app's own header or footer draw itself
+    small on the rail.
   - **Phone:** a drawer behind a menu button. Picking a row closes it.
+  - **Rows nest.** Give a `SidebarItem` `expanded` (whether it starts
+    open) and children. It gets a chevron that opens and closes it
+    without pressing it, its children one level in with a guide down
+    their left; `on_expand` hears it.
+  - **Sections** fold under their heading and remember it in the shell
+    (by `title`, or `id`), so a section stays folded when the sidebar
+    turns into the rail or the drawer. `open` is how it starts and
+    `on_toggle` hears each change. A heading can carry a `count` and an
+    `action` (a "+" button) that shows on hover.
+  - **Hover, press and focus.** A row washes under the pointer
+    (`--as-hover`) and darker while pressed (`--as-pressed`). The
+    selected row is lit (`--as-selected`) with its icon in the accent.
+    Keyboard focus is a ring (`--as-focus`, the accent).
+  - **The keyboard.** Every row and heading is a Tab stop. Up and Down
+    move between them in the order they are drawn, Home and End go to
+    the ends, Right opens a row (or a folded section), Left closes it or
+    goes to its parent, and Return or Space presses it.
+- **Scrollbars.** Everywhere inside the shell (its sidebar, sheets,
+  palette and switcher, and the app's own content) they are thin,
+  rounded and dark: WebKit and Blink through `::-webkit-scrollbar`,
+  Firefox through `scrollbar-width: thin` and `scrollbar-color`. Their
+  colours are `--as-scrollbar` and `--as-scrollbar-hover`. `ScrollArea`
+  is a scrolling column for an app's own lists. Don't set
+  `scrollbar-width` inline: in Blink it turns the styled parts off.
 
 ## On a phone
 
@@ -381,6 +417,15 @@ default features in the app crate.
 devenv shell -- cargo test --workspace            # model, commands, repair, UI (dioxus-ssr), gestures
 devenv shell -- cargo clippy --workspace --all-targets
 devenv shell -- cargo check -p app-shell --no-default-features   # the model alone
+```
+
+`examples/gallery` is a window with everything the sidebar does, to look
+at in a browser (dx 0.8, with the `wasm-bindgen` CLI that matches the
+lockfile on `PATH`):
+
+```bash
+cd examples/gallery && dx serve --platform web --features web
+# …/#rail starts the sidebar folded; …/#focus puts the keyboard on its first row
 ```
 
 The devenv environment pins Rust 1.99.1 and includes the libraries
