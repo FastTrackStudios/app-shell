@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/app-shell", "crates/app-shell-native"]
+members = ["crates/app-shell", "crates/app-shell-native", "examples/gallery"]
 
 [workspace.package]
 version = "0.1.0"

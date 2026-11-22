@@ -1,0 +1,17 @@
+[package]
+name = "app-shell-gallery"
+description = "app-shell's gallery: the window, its sidebar (full, rail, drawer) and its scroll areas, to look at in a browser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+default = []
+# `dx serve -p app-shell-gallery --platform web --features web`
+web = ["dioxus/web"]
+
+[dependencies]
+app-shell.workspace = true
+# The app crate keeps dioxus's default features (README, "Dioxus version").
+dioxus = { version = "=0.8.0-alpha.3" }
