@@ -46,7 +46,7 @@ use dioxus_native::{DioxusDocument, DioxusNativeEvent, DioxusNativeWindowRendere
 
 pub use model::{
     Accelerator, MenuEntry, MenuItem, ScreenRect, TrayEvent, TrayIcon, TrayMenu, TrayStatus,
-    panel_position,
+    panel_position, screen_at,
 };
 
 use crate::{Desk, Head, document_config, fit_lights, frame, logical_size, use_frame};
@@ -477,7 +477,7 @@ impl TrayLoop {
         } else {
             frame(attributes, false)
         };
-        if panel && let Some((x, y)) = self.panel_origin((w, h)) {
+        if panel && let Some((x, y)) = self.panel_origin(event_loop, (w, h)) {
             attributes = attributes.with_position(PhysicalPosition::new(x, y));
         }
         let vdom = VirtualDom::new_with_props(
@@ -534,26 +534,49 @@ impl TrayLoop {
     }
 
     /// Where the panel goes: under the icon where it was clicked, on the
-    /// screen the click was on. `None`: where the platform puts it (on
-    /// Wayland a window cannot place itself).
-    fn panel_origin(&self, size: (f64, f64)) -> Option<(i32, i32)> {
+    /// monitor the click was on (physical pixels). `None`: where the
+    /// platform puts it (on Wayland a window cannot place itself).
+    fn panel_origin(
+        &self,
+        event_loop: &dyn ActiveEventLoop,
+        size: (f64, f64),
+    ) -> Option<(i32, i32)> {
         let (x, y) = self.last_click?;
-        let icon = ScreenRect {
-            x: x - 12,
-            y: y - 12,
-            w: 24,
-            h: 24,
-        };
-        // The screen: the primary monitor's, where known.
-        let screen = ScreenRect {
-            x: 0,
-            y: 0,
-            w: 1920,
-            h: 1080,
-        };
+        #[allow(clippy::cast_possible_wrap, clippy::as_conversions)]
+        let screens: Vec<(ScreenRect, f64)> = event_loop
+            .available_monitors()
+            .filter_map(|m| {
+                let p = m.position()?;
+                let s = m.current_video_mode()?.size();
+                Some((
+                    ScreenRect {
+                        x: p.x,
+                        y: p.y,
+                        w: s.width as i32,
+                        h: s.height as i32,
+                    },
+                    m.scale_factor(),
+                ))
+            })
+            .collect();
+        let rects: Vec<ScreenRect> = screens.iter().map(|s| s.0).collect();
+        let screen = screen_at(x, y, &rects)?;
+        let scale = screens.iter().find(|s| s.0 == screen).map_or(1.0, |s| s.1);
+        // The icon: about a menu bar's height square, centred on the click.
         #[allow(clippy::cast_possible_truncation, clippy::as_conversions)]
-        let size = (size.0 as i32, size.1 as i32);
-        Some(panel_position(icon, size, screen, 6))
+        let (icon_px, w, h, margin) = (
+            (24.0 * scale) as i32,
+            (size.0 * scale) as i32,
+            (size.1 * scale) as i32,
+            (6.0 * scale) as i32,
+        );
+        let icon = ScreenRect {
+            x: x - icon_px / 2,
+            y: y - icon_px / 2,
+            w: icon_px,
+            h: icon_px,
+        };
+        Some(panel_position(icon, (w, h), screen, margin))
     }
 
     fn panel(

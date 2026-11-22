@@ -478,6 +478,16 @@ pub fn panel_position(
     (x, y)
 }
 
+/// The screen of `screens` the point `(x, y)` is on, else the first.
+#[must_use]
+pub fn screen_at(x: i32, y: i32, screens: &[ScreenRect]) -> Option<ScreenRect> {
+    screens
+        .iter()
+        .find(|s| x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h)
+        .or_else(|| screens.first())
+        .copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -570,6 +580,30 @@ mod tests {
         assert!(TrayIcon::from_rgba(vec![0; 15], 2, 2).is_none());
         let i = TrayIcon::from_rgba(vec![1, 2, 3, 4], 1, 1).expect("1x1");
         assert_eq!(i.to_argb(), vec![4, 1, 2, 3]);
+    }
+
+    #[test]
+    fn the_panel_goes_on_the_screen_that_was_clicked() {
+        let left = ScreenRect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        let right = ScreenRect {
+            x: 1920,
+            y: 0,
+            w: 2560,
+            h: 1440,
+        };
+        assert_eq!(screen_at(2000, 10, &[left, right]), Some(right));
+        assert_eq!(screen_at(100, 10, &[left, right]), Some(left));
+        assert_eq!(
+            screen_at(9000, 10, &[left, right]),
+            Some(left),
+            "off every screen: the first"
+        );
+        assert_eq!(screen_at(0, 0, &[]), None);
     }
 
     #[test]
