@@ -6,8 +6,17 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+# Menu bar / system tray apps (src/tray): a tray icon and its menu, running
+# with no window, windows (app-shell or a web view) opened from the tray, a
+# quick panel under the icon, start at login. A browser build never pulls it.
+tray = ["dep:wry", "dep:ksni", "dep:gtk", "dep:tray-icon"]
+
 [dependencies]
 app-shell.workspace = true
+# A window showing a URL in the platform's web view (WindowKind::Web).
+wry = { version = "0.57", optional = true }
 dioxus = { workspace = true, features = ["macro", "html", "signals", "hooks", "document"] }
 # The renderer: Vello on wgpu, the system's fonts, SVG icons, Blitz's HTML
 # parser for `dangerous_inner_html`.
@@ -25,3 +34,14 @@ futures-util = { version = "0.3", default-features = false }
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSView", "NSWindow", "NSButton", "NSControl"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
+
+# The tray on Linux: a StatusNotifierItem over D-Bus (KDE, GNOME with the
+# AppIndicator extension, most panels), no GTK needed for the tray itself.
+# GTK runs wry's web views there.
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"], optional = true }
+gtk = { version = "0.18", optional = true }
+
+# The tray on macOS (the menu bar) and Windows (the notification area).
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+tray-icon = { version = "0.26", optional = true }

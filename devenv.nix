@@ -15,9 +15,19 @@ let
     xorg.libXcursor
     xorg.libXi
     xorg.libXrandr
+    # app-shell-native's `tray` feature: wry's web views (WebKitGTK).
+    gtk3
+    webkitgtk_4_1
+    libsoup_3
+    glib
+    cairo
+    pango
+    gdk-pixbuf
+    atk
+    harfbuzz
   ];
 in
 {
-  packages = [ pkgs.pkg-config pkgs.fontconfig.dev pkgs.freetype.dev ] ++ runtime;
+  packages = [ pkgs.pkg-config pkgs.fontconfig.dev pkgs.freetype.dev ] ++ runtime ++ map lib.getDev runtime;
   env.LD_LIBRARY_PATH = lib.makeLibraryPath runtime;
 }

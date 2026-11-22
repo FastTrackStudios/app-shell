@@ -692,6 +692,8 @@ fn logical_size(window: &dyn OsWindow) -> (f64, f64) {
 
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(feature = "tray")]
+pub mod tray;
 
 /// A screen length as the model's points (screens fit an `f32`).
 #[allow(clippy::cast_possible_truncation, clippy::as_conversions)]
