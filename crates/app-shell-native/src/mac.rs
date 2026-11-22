@@ -66,3 +66,28 @@ pub fn fit_traffic_lights(window: &dyn HasWindowHandle, row: Option<f64>, left: 
         x += step;
     }
 }
+
+/// The app's activation policy: Accessory (no Dock icon, no menu bar of
+/// its own: a menu bar app with only its tray up) or Regular (while a
+/// window is open, which then comes to the front). winit sets the policy
+/// only as its event loop is built; this changes it as the app runs.
+#[cfg(feature = "tray")]
+pub fn set_accessory(on: bool) {
+    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+    let Some(mtm) = objc2_foundation::MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    let policy = if on {
+        NSApplicationActivationPolicy::Accessory
+    } else {
+        NSApplicationActivationPolicy::Regular
+    };
+    if app.activationPolicy() != policy {
+        app.setActivationPolicy(policy);
+        if !on {
+            #[allow(deprecated)]
+            app.activateIgnoringOtherApps(true);
+        }
+    }
+}

@@ -81,9 +81,12 @@ struct Tray {
 impl Backend for Tray {
     fn update(&mut self, state: &TrayState) {
         self.icon.set_menu(Some(Box::new(menu(state))));
-        let _ = self.icon.set_icon(icon(state));
-        // A badge has a colour: no longer a template.
-        self.icon.set_icon_as_template(state.drawn_icon().template);
+        // A badge has a colour: then no longer a template.
+        let _ = if state.drawn_icon().template {
+            self.icon.set_icon_templated(icon(state))
+        } else {
+            self.icon.set_icon(icon(state))
+        };
         let _ = self.icon.set_tooltip(Some(tooltip(state)));
     }
 }
@@ -114,11 +117,11 @@ pub(super) fn start(state: &TrayState, events: Events, panel: bool) -> Option<Bo
         .with_id(state.id.clone())
         .with_menu(Box::new(menu(state)))
         .with_tooltip(tooltip(state))
-        .with_icon_as_template(state.drawn_icon().template)
         // A left click opens the menu, macOS's way, unless the app has a
         // quick panel: then the click is the panel's.
         .with_menu_on_left_click(!panel);
     let built = match icon(state) {
+        Some(i) if state.drawn_icon().template => built.with_icon_templated(i),
         Some(i) => built.with_icon(i),
         None => built,
     };

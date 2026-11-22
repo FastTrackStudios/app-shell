@@ -792,13 +792,6 @@ fn FramedRoot(root: fn() -> Element, window_key: String) -> Element {
 #[allow(clippy::missing_const_for_fn)]
 fn accessory(event_loop: &dyn ActiveEventLoop, on: bool) {
     #[cfg(target_os = "macos")]
-    {
-        use dioxus_native::winit::platform::macos::{ActivationPolicy, ActiveEventLoopExtMacOS};
-        event_loop.set_activation_policy(if on {
-            ActivationPolicy::Accessory
-        } else {
-            ActivationPolicy::Regular
-        });
-    }
+    crate::mac::set_accessory(on);
     let _ = (event_loop, on);
 }

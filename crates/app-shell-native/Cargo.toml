@@ -32,8 +32,8 @@ futures-util = { version = "0.3", default-features = false }
 # A Mac window's own traffic lights, placed in the top bar's row
 # (src/mac.rs).
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSView", "NSWindow", "NSButton", "NSControl"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSView", "NSWindow", "NSButton", "NSControl", "NSApplication", "NSRunningApplication"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry", "NSThread"] }
 
 # The tray on Linux: a StatusNotifierItem over D-Bus (KDE, GNOME with the
 # AppIndicator extension, most panels), no GTK needed for the tray itself.

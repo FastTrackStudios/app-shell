@@ -22,7 +22,7 @@ Architect, CRDTs, storage or the Action List.
 | crate | what it is | depends on |
 |---|---|---|
 | `app-shell` | the layout model (no features), and the Dioxus components (feature `ui`, on by default) | `serde`, `thiserror`; with `ui`: `dioxus`, `futures-channel`, `futures-util`, `tracing` |
-| `app-shell-native` | pop-out OS windows and window decorations on dioxus-native | `app-shell`, `dioxus-native`, `blitz-shell`, `blitz-html` |
+| `app-shell-native` | pop-out OS windows and window decorations on dioxus-native; menu bar / tray apps with the `tray` feature | `app-shell`, `dioxus-native`, `blitz-shell`, `blitz-html`; with `tray`: `ksni` (Linux), `tray-icon` (macOS, Windows), `wry` |
 
 A browser build depends only on `app-shell`, so it never pulls in Blitz or wgpu.
 
@@ -137,6 +137,84 @@ build) the shell takes the phone layout by itself. In a browser it follows
 The arithmetic behind all this (`app_shell::gestures`: the layout
 threshold, the drawer's width, progress and settling, sheet detents,
 swipe direction, palette ranking) is plain functions with tests.
+
+## Menu bar apps
+
+`app-shell-native` with the `tray` feature runs an app whose home is a tray
+icon: the menu bar on macOS, a StatusNotifierItem on Linux (KDE Plasma,
+GNOME with the AppIndicator extension, most panels), the notification area
+on Windows. A browser build never pulls it in.
+
+```rust
+use app_shell_native::tray::{self, MenuItem, TrayApp, TrayEvent, TrayIcon, TrayMenu, WindowSpec};
+
+tray::run(TrayApp {
+    id: "studio.fasttrack.drive".into(),
+    name: "Drive".into(),
+    icon: TrayIcon::from_rgba(rgba, 32, 32).unwrap().template(true),
+    menu: TrayMenu::new()
+        .item(MenuItem::new("open", "Open Drive").accelerator("Mod+O"))
+        .item(MenuItem::new("synced", "Synced").detail("2 minutes ago").enabled(false))
+        .separator()
+        .item(MenuItem::new("quit", "Quit").accelerator("Mod+Q")),
+    start_window: None,      // the tray alone
+    panel: None,             // or Some(PanelSpec { size, root })
+    on_event: Box::new(|event, tray| match event {
+        TrayEvent::Menu(id) if id == "open" => {
+            tray.open_window(WindowSpec::shell("main", "Drive", drive_window))
+        }
+        TrayEvent::Menu(id) if id == "quit" => tray.quit(),
+        _ => {}
+    }),
+});
+```
+
+- **No window needed.** The app starts with only the tray. On macOS its
+  activation policy is Accessory (no Dock icon) while only the tray is up,
+  and Regular while a window is open. Closing the last window keeps the
+  process and its background work running; `Tray::quit` ends it.
+- **The menu is data** (`TrayMenu`): items, separators, submenus,
+  checkmarks, disabled rows and keyboard equivalents (`Mod+Q`).
+  `MenuItem::detail` adds a second line of status; neither muda nor
+  dbusmenu has one, so it follows the label after an em dash. Replace the
+  menu with `Tray::set_menu` or change a row with `Tray::update_item`.
+  Clicks arrive as `TrayEvent::Menu(id)`. A checkmark is the app's to flip.
+- **The icon.** `TrayIcon::template(true)` marks a template image on macOS
+  (monochrome, drawn in the menu bar's own colour, light or dark).
+  `Tray::set_status(TrayStatus::Syncing | Warning | Error)` draws a
+  coloured badge at its corner (a badged icon is no longer a template).
+  On Linux, Warning and Error also set the item's NeedsAttention status.
+  `Tray::set_tooltip` sets the tooltip.
+- **Windows from the tray.** `Tray::open_window(WindowSpec)` opens either:
+  - `WindowKind::Shell(fn() -> Element)`: an app-shell window drawn by
+    Blitz, its title bar the shell's;
+  - `WindowKind::Web(url)`: the platform's web view (WebKit on macOS,
+    WebView2 on Windows, WebKitGTK on Linux) for what Blitz can't draw
+    (audio and video, a PDF on a canvas).
+
+  A key that is already open comes to the front instead of opening twice.
+  `use_tray()` reaches the tray from inside a window.
+- **A quick panel.** `PanelSpec { size, root }` is a borderless window
+  opened by a click on the icon (on macOS the click opens the panel instead
+  of the menu) and closed when it loses the focus. `panel_position` places
+  it under the icon where the platform lets a window place itself; on
+  Wayland the compositor decides. Give its content a full-bleed
+  background: the window has square corners.
+- **Start at login, opt-in** (`tray::autostart`): `set(&Autostart, true)`
+  writes, and `set(.., false)` removes, only the app's own entry:
+  - Linux: an XDG autostart file, `~/.config/autostart/<id>.desktop`;
+  - macOS: a LaunchAgent, `~/Library/LaunchAgents/<id>.plist`;
+  - Windows: a value under `HKCU\…\Run`.
+
+  `is_enabled` reads it back. A signed `.app` bundle could use
+  `SMAppService` instead of the LaunchAgent; that is left to the app (see
+  the issues).
+
+Linux needs a StatusNotifierWatcher in the session (Plasma's kded,
+GNOME's AppIndicator extension, a panel that hosts one). Without one, the
+app runs with no tray and waits for one to appear. Building the `tray`
+feature on Linux needs GTK and WebKitGTK (for wry); the devenv here has
+them.
 
 ## The seams your app owns
 
