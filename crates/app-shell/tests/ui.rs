@@ -7,9 +7,9 @@
 use std::cell::RefCell;
 
 use app_shell::ui::{
-    AppShell, FormFactor, SearchField, Sidebar, SidebarItem, SidebarSection, SidebarSwitcher,
-    TabCtx, TabKind, TabKinds, Tabs, ToolbarButton, ToolbarGroup, TopBar, WindowControls, icons,
-    use_shell,
+    AppShell, FormFactor, SHELL_CSS, ScrollArea, SearchField, Sidebar, SidebarItem, SidebarMode,
+    SidebarSection, SidebarState, SidebarSwitcher, TabCtx, TabKind, TabKinds, Tabs, ToolbarButton,
+    ToolbarGroup, TopBar, WindowControls, icons, use_shell, use_sidebar_mode,
 };
 use app_shell::{Command, Pane, PaneId, Rect, Side, Target, WindowId, Workspace};
 use dioxus::prelude::*;
@@ -440,6 +440,137 @@ fn a_sidebar_docks_at_the_left_with_the_lights_at_its_top() {
     assert!(
         html.contains("aria-label=\"Sidebar\""),
         "the button that hides it"
+    );
+}
+
+#[derive(Props, Clone, PartialEq)]
+struct Railed {
+    rail: bool,
+}
+
+#[allow(non_snake_case)]
+fn RailShell(props: Railed) -> Element {
+    let c = use_hook(|| controls(true, None));
+    use_context_provider(|| c);
+    rsx! {
+        AppShell {
+            title: "Files",
+            form: FormFactor::Desktop,
+            sidebar_state: SidebarState { rail: Some(props.rail), ..SidebarState::default() },
+            sidebar: rsx! {
+                Sidebar {
+                    header: rsx! { SidebarSwitcher { title: "Library", detail: "3 locations" } },
+                    footer: rsx! { ModeProbe {} },
+                    SidebarSection { title: "Library", count: "2",
+                        action: rsx! { button { class: "add", "+" } },
+                        SidebarItem { label: "Overview", icon: icons::HOME, selected: true }
+                        SidebarItem { label: "Projects", icon: icons::FOLDER, badge: "3", expanded: true,
+                            SidebarItem { label: "Nested child", icon: icons::FOLDER }
+                        }
+                        SidebarItem { label: "Shut branch", expanded: false,
+                            SidebarItem { label: "Unseen child" }
+                        }
+                    }
+                }
+            },
+            p { "body" }
+        }
+    }
+}
+
+#[component]
+fn ModeProbe() -> Element {
+    let mode = match use_sidebar_mode() {
+        SidebarMode::Docked => "docked",
+        SidebarMode::Rail => "rail",
+        SidebarMode::Drawer => "drawer",
+    };
+    rsx! { span { class: "probe", "mode {mode}" } }
+}
+
+fn render_rail(rail: bool) -> String {
+    let mut dom = VirtualDom::new_with_props(RailShell, Railed { rail });
+    dom.rebuild_in_place();
+    dioxus_ssr::render(&dom)
+}
+
+#[test]
+fn rows_nest_under_a_chevron_with_a_guide_and_take_the_keyboard() {
+    let html = render_rail(false);
+    assert!(html.contains("data-sidebar=\"docked\""));
+    assert!(html.contains("mode docked"), "the content knows its mode");
+    assert!(
+        html.contains(">Nested child</span>"),
+        "an open branch shows its rows"
+    );
+    assert!(html.contains("aria-level=\"2\""), "one level in");
+    assert!(html.contains("class=\"as-indent-guide\""));
+    assert!(!html.contains("Unseen child"), "a shut branch hides them");
+    assert_eq!(
+        html.matches("aria-expanded=\"true\"").count(),
+        2,
+        "the section and the open branch"
+    );
+    assert!(html.contains("aria-label=\"Collapse\"") && html.contains("aria-label=\"Expand\""));
+    assert!(html.contains("tabindex=\"0\""), "rows take the focus");
+    assert!(html.contains("role=\"tree\"") && html.contains("role=\"treeitem\""));
+    assert!(
+        html.contains("class=\"as-section-count\"") && html.contains("class=\"as-section-action\"")
+    );
+    assert!(
+        html.contains("class=\"as-sidebar-edge\""),
+        "an edge to drag"
+    );
+}
+
+#[test]
+fn folded_to_the_rail_the_sidebar_is_icons_under_a_top_bar_across_the_window() {
+    let html = render_rail(true);
+    assert!(html.contains("data-sidebar=\"rail\"") && html.contains("width: 52px;"));
+    assert!(html.contains("mode rail"));
+    let bar_at = html.find("class=\"as-topbar\"").unwrap();
+    let lights_at = html.find("class=\"as-lights\"").unwrap();
+    let rail_at = html.find("data-sidebar=\"rail\"").unwrap();
+    assert!(
+        bar_at < lights_at && lights_at < rail_at,
+        "the lights in the top bar, the rail under it"
+    );
+    assert!(
+        html.contains("aria-label=\"Overview\""),
+        "its name for a reader and the tip"
+    );
+    assert!(!html.contains(">Overview</span>"), "no label drawn");
+    assert!(
+        !html.contains("Nested child"),
+        "nested rows hide on the rail"
+    );
+    assert!(
+        !html.contains(">Library</span>"),
+        "no headings, a rule instead"
+    );
+    assert!(html.contains("class=\"as-rail-rule\""));
+    assert!(html.contains("class=\"as-rail-dot\""), "a badge is a dot");
+}
+
+#[test]
+fn the_scrollbars_are_thin_rounded_and_themed_in_every_engine() {
+    for needle in [
+        "::-webkit-scrollbar-thumb",
+        "border-radius: 999px",
+        "var(--as-scrollbar)",
+        "scrollbar-width: thin",
+        "scrollbar-color: var(--as-scrollbar) transparent",
+        "@supports not selector(::-webkit-scrollbar)",
+    ] {
+        assert!(SHELL_CSS.contains(needle), "{needle}");
+    }
+    let mut dom = VirtualDom::new(|| rsx! { ScrollArea { p { "x" } } });
+    dom.rebuild_in_place();
+    let html = dioxus_ssr::render(&dom);
+    assert!(html.contains("as-scroll") && html.contains("overflow-y: scroll"));
+    assert!(
+        !html.contains("scrollbar-width"),
+        "inline, it would switch Blink's parts off"
     );
 }
 

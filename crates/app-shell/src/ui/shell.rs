@@ -14,7 +14,10 @@ use super::overlay::{
 };
 use super::popup::MenuAction;
 use super::popup::{MenuItem, Popup, PopupContent, PopupLayer};
-use super::sidebar::{DockedSidebar, DrawerSidebar, SIDEBAR_MAX, SIDEBAR_MIN, SidebarState};
+use super::sidebar::{
+    DockedSidebar, DrawerSidebar, SIDEBAR_MAX, SIDEBAR_MIN, SidebarState, Tip, TipLayer,
+    sidebar_drag,
+};
 use super::stack::DragLayer;
 use super::switcher::Switcher;
 use super::window::{InPageWindows, SoloView, WindowBody};
@@ -122,8 +125,13 @@ pub(crate) enum Gesture {
         start: (f64, f64),
         rect: Rect,
     },
-    /// The docked sidebar's edge dragged.
-    Sidebar { start: (f64, f64), width: f32 },
+    /// The docked sidebar's edge dragged: its full width, and whether it
+    /// was the rail, when the drag began.
+    Sidebar {
+        start: (f64, f64),
+        width: f32,
+        rail: bool,
+    },
     /// A phone's drawer under the finger: opening from the edge (`from`
     /// 0) or closing (`from` 1).
     Drawer { start: (f64, f64), from: f64 },
@@ -194,6 +202,16 @@ pub struct Shell {
     /// The docked sidebar: shown, and its width.
     pub(crate) sidebar_open: Signal<bool>,
     pub(crate) sidebar_w: Signal<f32>,
+    /// Folded to the rail, as chosen (`None`: by the window's width).
+    pub(crate) sidebar_rail: Signal<Option<bool>>,
+    /// Each sidebar section's folding, by its id: kept across the rail,
+    /// the drawer and the sidebar coming back.
+    pub(crate) section_open: Signal<std::collections::HashMap<String, bool>>,
+    /// A rail icon's name on show.
+    pub(crate) tip: Signal<Option<Tip>>,
+    /// Where the shell's root is in the window (its overlays are placed
+    /// from it).
+    pub(crate) origin: Signal<(f64, f64)>,
     /// The phone's drawer is out.
     pub(crate) drawer: Signal<bool>,
     /// How open the drawer is under the finger (0 to 1), while dragged.
@@ -285,9 +303,15 @@ impl Shell {
                     let out = *self.drawer.peek();
                     self.set_drawer(!out);
                 } else {
-                    let open = *self.sidebar_open.peek();
-                    let width = *self.sidebar_w.peek();
-                    self.set_sidebar(SidebarState { open: !open, width });
+                    // Folded to the rail and back (Architect's); a hidden
+                    // sidebar comes back at its full width.
+                    let now = self.sidebar_state();
+                    let rail = now.open && !self.sidebar_folded();
+                    self.set_sidebar(SidebarState {
+                        open: true,
+                        rail: Some(rail),
+                        ..now
+                    });
                 }
             }
             return;
@@ -493,21 +517,44 @@ impl Shell {
         }
     }
 
-    /// Show, hide or resize the docked sidebar, telling the app.
+    /// The docked sidebar's state now.
+    #[must_use]
+    pub fn sidebar_state(&self) -> SidebarState {
+        SidebarState {
+            open: *self.sidebar_open.peek(),
+            width: *self.sidebar_w.peek(),
+            rail: *self.sidebar_rail.peek(),
+        }
+    }
+
+    /// Whether the docked sidebar is folded to the rail now (chosen, or by
+    /// the window's width).
+    #[must_use]
+    pub fn sidebar_folded(&self) -> bool {
+        let rail = *self.sidebar_rail.read();
+        let w = self.viewport.read().0;
+        SidebarState {
+            rail,
+            ..SidebarState::default()
+        }
+        .folded(w)
+    }
+
+    /// Show, hide, fold or resize the docked sidebar, telling the app.
     pub fn set_sidebar(&self, state: SidebarState) {
         let width = state.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
-        let (mut open, mut w) = (self.sidebar_open, self.sidebar_w);
+        let (mut open, mut w, mut rail) = (self.sidebar_open, self.sidebar_w, self.sidebar_rail);
         if *open.peek() != state.open {
             open.set(state.open);
         }
         if (*w.peek() - width).abs() > f32::EPSILON {
             w.set(width);
         }
+        if *rail.peek() != state.rail {
+            rail.set(state.rail);
+        }
         if let Some(f) = self.hooks.peek().on_sidebar {
-            f.call(SidebarState {
-                open: state.open,
-                width,
-            });
+            f.call(SidebarState { width, ..state });
         }
     }
 
@@ -634,10 +681,18 @@ impl Shell {
                     e.drag = dy;
                 }
             }
-            Some(Gesture::Sidebar { start, width }) => {
-                let next = (width + narrow(at.0 - start.0)).clamp(SIDEBAR_MIN, SIDEBAR_MAX);
-                let mut w = self.sidebar_w;
-                w.set(next);
+            Some(Gesture::Sidebar { start, width, rail })
+                if (at.0 - start.0).abs() >= DRAG_SLOP =>
+            {
+                let vw = self.viewport.peek().0;
+                let (folded, next) = sidebar_drag(width, rail, narrow(at.0 - start.0), vw);
+                let (mut w, mut r) = (self.sidebar_w, self.sidebar_rail);
+                if (*w.peek() - next).abs() > f32::EPSILON {
+                    w.set(next);
+                }
+                if *r.peek() != Some(folded) {
+                    r.set(Some(folded));
+                }
             }
             Some(Gesture::Float { pane, start, rect }) => {
                 let moved = Rect::new(
@@ -700,9 +755,13 @@ impl Shell {
                 }
             }
             Gesture::Tab { .. } => {}
-            Gesture::Sidebar { .. } => {
-                let width = *self.sidebar_w.peek();
-                self.set_sidebar(SidebarState { open: true, width });
+            Gesture::Sidebar { start, .. } => {
+                // A press that did not move chooses nothing.
+                if (at.0 - start.0).abs() < DRAG_SLOP {
+                    return;
+                }
+                let now = self.sidebar_state();
+                self.set_sidebar(SidebarState { open: true, ..now });
             }
             Gesture::Drawer { start, from } => {
                 let dx = at.0 - start.0;
@@ -760,8 +819,16 @@ pub(crate) const fn narrow(v: f64) -> f32 {
     v as f32
 }
 
-/// The hover affordances: additive only (every component lays out
-/// without them), one static sheet both renderers read.
+/// The hover, press and focus affordances and the scrollbars: additive
+/// only (every component lays out without them), one static sheet both
+/// renderers read.
+///
+/// The scrollbars are thin, rounded and in the theme's colours
+/// (`--as-scrollbar`, `--as-scrollbar-hover`) everywhere inside the shell,
+/// the app's own content included: WebKit and Blink by their
+/// `::-webkit-scrollbar` parts, Firefox by `scrollbar-width` and
+/// `scrollbar-color` (set only where the WebKit parts are unknown: in
+/// Blink they would switch the parts off).
 pub const SHELL_CSS: &str = r"
 .as-hov:hover { background-color: var(--as-raised); }
 .as-tab:hover { color: var(--as-text); }
@@ -772,6 +839,31 @@ pub const SHELL_CSS: &str = r"
 .as-lights .as-glyph { opacity: 0; }
 .as-lights:hover .as-glyph { opacity: 1; }
 .as-search:focus-within { border-color: var(--as-accent); }
+.as-row { cursor: default; outline: none; }
+.as-row-hov:hover { background-color: var(--as-hover); }
+.as-row:active { background-color: var(--as-pressed); }
+.as-row:focus-visible, .as-section-heading:focus-visible { box-shadow: inset 0 0 0 2px var(--as-focus); }
+.as-section-heading { cursor: default; outline: none; }
+.as-section-heading:hover { color: var(--as-muted); }
+.as-section-chevron { opacity: 0.55; }
+.as-section-heading:hover .as-section-chevron, .as-section-heading:focus-visible .as-section-chevron { opacity: 1; }
+.as-section-action { opacity: 0; }
+.as-section-heading:hover .as-section-action, .as-section-heading:focus-within .as-section-action { opacity: 1; }
+.as-row-chevron:hover { color: var(--as-text); }
+.as-sidebar-section:first-child > .as-rail-rule { display: none; }
+.as-sidebar-edge:hover .as-edge-line, .as-sidebar-edge[data-dragging=true] .as-edge-line { background-color: var(--as-accent); }
+.app-shell::-webkit-scrollbar, .app-shell ::-webkit-scrollbar { width: 10px; height: 10px; }
+.app-shell::-webkit-scrollbar-track, .app-shell ::-webkit-scrollbar-track,
+.app-shell::-webkit-scrollbar-corner, .app-shell ::-webkit-scrollbar-corner { background-color: transparent; }
+.app-shell::-webkit-scrollbar-thumb, .app-shell ::-webkit-scrollbar-thumb {
+  background-color: var(--as-scrollbar); border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box; min-height: 32px;
+}
+.app-shell::-webkit-scrollbar-thumb:hover, .app-shell ::-webkit-scrollbar-thumb:hover { background-color: var(--as-scrollbar-hover); }
+.app-shell ::-webkit-scrollbar-button { display: none; }
+@supports not selector(::-webkit-scrollbar) {
+  .app-shell, .app-shell * { scrollbar-width: thin; scrollbar-color: var(--as-scrollbar) transparent; }
+}
 ";
 
 /// The shell's sheet, in a component of its own that never changes.
@@ -879,6 +971,10 @@ pub fn AppShell(
         sidebar_given: Signal::new(sidebar.is_some()),
         sidebar_open: Signal::new(start.open),
         sidebar_w: Signal::new(start.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX)),
+        sidebar_rail: Signal::new(start.rail),
+        section_open: Signal::new(std::collections::HashMap::new()),
+        tip: Signal::new(None),
+        origin: Signal::new((0.0, 0.0)),
         drawer: Signal::new(false),
         drawer_drag: Signal::new(None),
         drawer_dragged: CopyValue::new(false),
@@ -982,6 +1078,7 @@ pub fn AppShell(
     let tabs_now = shell.tabs_shown();
     let switcher = *shell.switcher.read() && tabs_now;
     let docked = !phone && sidebar.is_some() && *shell.sidebar_open.read();
+    let rail = docked && shell.sidebar_folded();
     let drawer = phone && sidebar.is_some();
     let touch = if phone { " touch-action: pan-y;" } else { "" };
     let style = format!(
@@ -1007,6 +1104,8 @@ pub fn AppShell(
                 spawn(async move {
                     if let Ok(rect) = event.data().get_client_rect().await {
                         measured.set((rect.size.width, rect.size.height));
+                        let mut origin = shell.origin;
+                        origin.set((rect.origin.x, rect.origin.y));
                     }
                 });
             },
@@ -1051,15 +1150,26 @@ pub fn AppShell(
                 let p = event.client_coordinates();
                 shell.released((p.x, p.y));
             },
-            if docked {
+            // At full width the sidebar runs the window's height, the lights
+            // at its top; folded to the rail it sits under the top bar,
+            // which runs across the window with the lights at its start.
+            if docked && !rail {
                 if let Some(content) = sidebar.clone() {
-                    DockedSidebar { content }
+                    DockedSidebar { content, rail: false }
                 }
             }
             div {
                 class: "as-main",
                 style: "position: relative; flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column;",
                 {top}
+                div {
+                    class: "as-middle",
+                    style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; flex-direction: row;",
+                if rail {
+                    if let Some(content) = sidebar.clone() {
+                        DockedSidebar { content, rail: true }
+                    }
+                }
                 div {
                     class: "as-body",
                     style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; overflow: hidden;",
@@ -1081,6 +1191,7 @@ pub fn AppShell(
                     if in_page && tabs_now && !phone {
                         InPageWindows {}
                     }
+                }
                 }
                 if phone {
                     PhoneFoot {
@@ -1106,6 +1217,9 @@ pub fn AppShell(
             PopupLayer {}
             SheetLayer {}
             ToastLayer {}
+            if rail {
+                TipLayer {}
+            }
         }
     }
 }

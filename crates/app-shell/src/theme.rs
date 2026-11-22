@@ -48,6 +48,13 @@ pub const VARIABLES: &[(&str, &str)] = &[
     ("--as-light-zoom", "#28c840"),
     ("--as-light-off", "#4a4a50"),
     ("--as-search-bg", "rgba(255, 255, 255, 0.06)"),
+    // A row under the pointer, pressed, and the keyboard's ring.
+    ("--as-hover", "rgba(255, 255, 255, 0.05)"),
+    ("--as-pressed", "rgba(255, 255, 255, 0.1)"),
+    ("--as-focus", "var(--as-accent)"),
+    // The scrollbars' thumb, and under the pointer.
+    ("--as-scrollbar", "rgba(255, 255, 255, 0.16)"),
+    ("--as-scrollbar-hover", "rgba(255, 255, 255, 0.3)"),
 ];
 
 /// The light theme's colours (the sizes are the defaults').
@@ -69,6 +76,10 @@ pub const LIGHT: &[(&str, &str)] = &[
     ("--as-heading", "#a1a1aa"),
     ("--as-light-off", "#d4d4d8"),
     ("--as-search-bg", "rgba(0, 0, 0, 0.05)"),
+    ("--as-hover", "rgba(0, 0, 0, 0.04)"),
+    ("--as-pressed", "rgba(0, 0, 0, 0.08)"),
+    ("--as-scrollbar", "rgba(0, 0, 0, 0.2)"),
+    ("--as-scrollbar-hover", "rgba(0, 0, 0, 0.35)"),
 ];
 
 /// The values the shell's root sets.

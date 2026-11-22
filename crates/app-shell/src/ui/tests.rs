@@ -247,6 +247,7 @@ fn the_sidebar_edge_dragged_resizes_it_within_bounds_and_tells_the_app() {
         g.set(Some(Gesture::Sidebar {
             start: (220.0, 10.0),
             width: 220.0,
+            rail: false,
         }));
         s.moved((300.0, 10.0));
         assert!((*s.sidebar_w.peek() - 300.0).abs() < 0.01);
@@ -263,22 +264,91 @@ fn the_sidebar_edge_dragged_resizes_it_within_bounds_and_tells_the_app() {
         heard,
         vec![SidebarState {
             open: true,
-            width: super::SIDEBAR_MAX
+            width: super::SIDEBAR_MAX,
+            rail: Some(false),
         }]
     );
 }
 
 #[test]
-fn toggle_sidebar_hides_and_shows_it_on_a_desktop() {
+fn the_sidebar_edge_dragged_narrow_folds_it_to_the_rail_and_back() {
+    SIDEBAR.with(|s| s.borrow_mut().clear());
+    run(tabs(&["a"]), |s| {
+        let mut g = s.gesture;
+        g.set(Some(Gesture::Sidebar {
+            start: (220.0, 10.0),
+            width: 220.0,
+            rail: false,
+        }));
+        s.moved((60.0, 10.0));
+        assert!(s.sidebar_folded(), "past the snap it is the rail");
+        assert!(
+            (*s.sidebar_w.peek() - 220.0).abs() < 0.01,
+            "its width kept for unfolding"
+        );
+        s.released((60.0, 10.0));
+        g.set(Some(Gesture::Sidebar {
+            start: (52.0, 10.0),
+            width: 220.0,
+            rail: true,
+        }));
+        s.moved((300.0, 10.0));
+        assert!(!s.sidebar_folded());
+        assert!((*s.sidebar_w.peek() - 300.0).abs() < 0.01);
+        s.released((300.0, 10.0));
+    });
+    let heard = SIDEBAR.with(|s| s.borrow().iter().map(|x| x.rail).collect::<Vec<_>>());
+    assert_eq!(heard, vec![Some(true), Some(false)]);
+}
+
+#[test]
+fn a_press_on_the_edge_that_does_not_move_chooses_nothing() {
+    SIDEBAR.with(|s| s.borrow_mut().clear());
+    run(tabs(&["a"]), |s| {
+        let mut g = s.gesture;
+        g.set(Some(Gesture::Sidebar {
+            start: (220.0, 10.0),
+            width: 220.0,
+            rail: false,
+        }));
+        s.moved((222.0, 10.0));
+        s.released((222.0, 10.0));
+        assert_eq!(*s.sidebar_rail.peek(), None, "still the window's to say");
+    });
+    assert!(SIDEBAR.with(|s| s.borrow().is_empty()));
+}
+
+#[test]
+fn toggle_sidebar_folds_it_to_the_rail_and_back_on_a_desktop() {
     SIDEBAR.with(|s| s.borrow_mut().clear());
     run(tabs(&["a"]), |s| {
         s.command(crate::Command::ToggleSidebar);
-        assert!(!*s.sidebar_open.peek());
+        assert!(s.sidebar_folded() && *s.sidebar_open.peek());
         s.command(crate::Command::ToggleSidebar);
-        assert!(*s.sidebar_open.peek());
+        assert!(!s.sidebar_folded());
+        // Hidden by the app, the button brings it back at full width.
+        s.set_sidebar(SidebarState {
+            open: false,
+            ..s.sidebar_state()
+        });
+        s.command(crate::Command::ToggleSidebar);
+        assert!(*s.sidebar_open.peek() && !s.sidebar_folded());
     });
-    let heard = SIDEBAR.with(|s| s.borrow().iter().map(|x| x.open).collect::<Vec<_>>());
-    assert_eq!(heard, vec![false, true]);
+    let heard = SIDEBAR.with(|s| {
+        s.borrow()
+            .iter()
+            .map(|x| (x.open, x.rail))
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(
+        heard,
+        vec![
+            (true, Some(true)),
+            (true, Some(false)),
+            (false, Some(false)),
+            (true, Some(false))
+        ]
+    );
 }
 
 #[derive(Props, Clone, PartialEq)]

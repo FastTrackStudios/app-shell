@@ -179,7 +179,10 @@ pub fn TopBar(
     let has_sidebar = shell.has_sidebar();
     let sidebar_open = *shell.sidebar_open.read();
     let tabs = shell.tabs_shown();
-    let lights_here = !(has_sidebar && sidebar_open && !phone);
+    // The lights are the docked sidebar's at its full width; folded to the
+    // rail, the top bar runs across the window and holds them.
+    let folded = has_sidebar && sidebar_open && !phone && shell.sidebar_folded();
+    let lights_here = !(has_sidebar && sidebar_open && !phone) || folded;
     let layout = shell.layout.read();
     let count = layout.tab_count();
     let active_title = layout

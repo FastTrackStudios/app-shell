@@ -363,7 +363,7 @@ fn SheetFrame(entry: SheetEntry, top: bool, depth: usize, phone: bool, dragging:
                     {header}
                     div {
                         class: "as-sheet-body",
-                        style: "flex: 1 1 auto; min-height: 0; overflow-y: scroll; scrollbar-width: thin; padding: 0 12px 12px 12px;",
+                        style: "flex: 1 1 auto; min-height: 0; overflow-y: scroll; padding: 0 12px 12px 12px;",
                         {body}
                     }
                 }
@@ -415,7 +415,7 @@ fn SheetFrame(entry: SheetEntry, top: bool, depth: usize, phone: bool, dragging:
                 }
                 div {
                     class: "as-sheet-body",
-                    style: "flex: 1 1 auto; min-height: 0; overflow-y: scroll; scrollbar-width: thin; padding: 0 12px;",
+                    style: "flex: 1 1 auto; min-height: 0; overflow-y: scroll; padding: 0 12px;",
                     {body}
                 }
             }

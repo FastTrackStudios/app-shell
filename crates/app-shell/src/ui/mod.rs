@@ -40,8 +40,9 @@ pub use shell::{
     window_title,
 };
 pub use sidebar::{
-    SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH, Sidebar, SidebarItem, SidebarSection, SidebarState,
-    SidebarSwitcher,
+    SIDEBAR_FOLD_BELOW, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_PAGE_ROOM, SIDEBAR_RAIL, SIDEBAR_SNAP,
+    SIDEBAR_WIDTH, ScrollArea, Sidebar, SidebarItem, SidebarMode, SidebarSection, SidebarState,
+    SidebarSwitcher, use_sidebar_mode,
 };
 pub use split::NodeView;
 pub use stack::{StackView, TabBar, TabBody};
