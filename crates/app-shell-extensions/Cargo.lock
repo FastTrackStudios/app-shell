@@ -152,6 +152,7 @@ dependencies = [
  "dioxus-native-dom",
  "dioxus-ssr",
  "dispatch2",
+ "facet",
  "futures",
  "futures-timer",
  "objc2",

@@ -36,6 +36,9 @@ pub enum SheetContent {
     /// Open anything (⌘O): what the openers in the
     /// [`super::PaletteSources`] find.
     QuickOpen,
+    /// A palette overlay drawn by a view of the app's or an extension's
+    /// ([`super::Shell::set_palette_view`]), where the palette goes.
+    Overlay(Callback<(), Element>),
 }
 
 /// A sheet to open.
@@ -360,7 +363,7 @@ fn SheetFrame(entry: SheetEntry, top: bool, depth: usize, phone: bool, dragging:
     let events = if top { "auto" } else { "none" };
     let palette = matches!(
         entry.spec.content,
-        SheetContent::Palette(_) | SheetContent::QuickOpen
+        SheetContent::Palette(_) | SheetContent::QuickOpen | SheetContent::Overlay(_)
     );
     let body = match entry.spec.content.clone() {
         SheetContent::Custom(render) => render.call(()),
@@ -369,6 +372,7 @@ fn SheetFrame(entry: SheetEntry, top: bool, depth: usize, phone: bool, dragging:
         SheetContent::QuickOpen => {
             rsx! { super::palette::PaletteView { items: Vec::new(), phone, open: true } }
         }
+        SheetContent::Overlay(draw) => draw.call(()),
     };
     let title = entry.spec.title.clone();
     let header = rsx! {

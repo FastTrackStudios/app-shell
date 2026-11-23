@@ -141,6 +141,36 @@ impl std::fmt::Debug for BoundKey {
     }
 }
 
+/// An overlay of the shell's palette slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PaletteOverlay {
+    /// The command palette (Mod+K).
+    Palette,
+    /// Open anything (⌘O).
+    QuickOpen,
+}
+
+impl PaletteOverlay {
+    /// `palette` or `quick-open`.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "palette" => Some(Self::Palette),
+            "quick-open" => Some(Self::QuickOpen),
+            _ => None,
+        }
+    }
+
+    /// Its name: `palette` or `quick-open`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Palette => "palette",
+            Self::QuickOpen => "quick-open",
+        }
+    }
+}
+
 /// A pointer gesture under way.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Gesture {
@@ -288,6 +318,11 @@ pub struct Shell {
     next_id: CopyValue<u64>,
     /// Keys the app binds past its keymap ([`Shell::bind_keys`]).
     bound: CopyValue<Bound>,
+    /// What draws each palette overlay in the shell's place
+    /// ([`Shell::set_palette_view`]).
+    palette_views: CopyValue<Vec<(PaletteOverlay, Callback<(), Element>)>>,
+    /// The query the next palette opens with.
+    palette_query: CopyValue<String>,
     /// The window's size, points (0 until measured).
     pub(crate) viewport: Signal<(f64, f64)>,
     hooks: CopyValue<Hooks>,
@@ -517,35 +552,90 @@ impl Shell {
     }
 
     /// Open the command palette with the app's entries (`palette`):
-    /// a sheet on a phone, a panel near the top on a desktop.
+    /// a sheet on a phone, a panel near the top on a desktop. When a view
+    /// draws it ([`Self::set_palette_view`]), that view, in its place.
     pub fn open_palette(&self) {
-        let items = self
-            .hooks
-            .peek()
-            .palette
-            .map(|f| f.call(()))
-            .unwrap_or_default();
+        self.open_overlay(PaletteOverlay::Palette, "");
+    }
+
+    /// Open open-anything (⌘O): what the openers in the
+    /// [`super::PaletteSources`] in context find, or the view that draws
+    /// it.
+    pub fn open_quick_open(&self) {
+        self.open_overlay(PaletteOverlay::QuickOpen, "");
+    }
+
+    /// Open `overlay`, its field holding `query` (`theme:` asks one
+    /// opener). One open already closes first.
+    pub fn open_overlay(&self, overlay: PaletteOverlay, query: &str) {
+        self.close_palette();
         self.close_popup();
+        let mut q = self.palette_query;
+        q.set(query.to_owned());
+        let content = match (self.palette_view(overlay), overlay) {
+            (Some(draw), _) => SheetContent::Overlay(draw),
+            (None, PaletteOverlay::Palette) => SheetContent::Palette(
+                self.hooks
+                    .peek()
+                    .palette
+                    .map(|f| f.call(()))
+                    .unwrap_or_default(),
+            ),
+            (None, PaletteOverlay::QuickOpen) => SheetContent::QuickOpen,
+        };
         self.open_sheet(SheetSpec {
             title: None,
             detent: Detent::Large,
             detents: vec![Detent::Large],
-            content: SheetContent::Palette(items),
+            content,
             on_close: None,
         });
     }
 
-    /// Open open-anything (⌘O): what the openers in the
-    /// [`super::PaletteSources`] in context find.
-    pub fn open_quick_open(&self) {
-        self.close_popup();
-        self.open_sheet(SheetSpec {
-            title: None,
-            detent: Detent::Large,
-            detents: vec![Detent::Large],
-            content: SheetContent::QuickOpen,
-            on_close: None,
-        });
+    /// Close the palette's overlay, if one is open.
+    pub fn close_palette(&self) {
+        let open: Vec<SheetId> = self
+            .sheets
+            .peek()
+            .iter()
+            .filter(|s| {
+                matches!(
+                    s.spec.content,
+                    SheetContent::Palette(_) | SheetContent::QuickOpen | SheetContent::Overlay(_)
+                )
+            })
+            .map(|s| s.id)
+            .collect();
+        for id in open {
+            self.close_sheet(id);
+        }
+    }
+
+    /// Draws `overlay` with `draw` in place of the shell's own (an
+    /// extension's palette); `None` gives it back to the shell.
+    pub fn set_palette_view(&self, overlay: PaletteOverlay, draw: Option<Callback<(), Element>>) {
+        let mut views = self.palette_views;
+        let mut all = views.write();
+        all.retain(|(o, _)| *o != overlay);
+        if let Some(draw) = draw {
+            all.push((overlay, draw));
+        }
+    }
+
+    /// What draws `overlay` in the shell's place, if anything.
+    #[must_use]
+    pub fn palette_view(&self, overlay: PaletteOverlay) -> Option<Callback<(), Element>> {
+        self.palette_views
+            .peek()
+            .iter()
+            .find(|(o, _)| *o == overlay)
+            .map(|(_, d)| *d)
+    }
+
+    /// The query the palette opening now starts with (then none).
+    pub(crate) fn take_palette_query(&self) -> String {
+        let mut q = self.palette_query;
+        std::mem::take(&mut *q.write())
     }
 
     /// Close what floats over the page for a navigation: the popup, the
@@ -1206,6 +1296,8 @@ pub fn AppShell(
         toasts: Signal::new(Vec::new()),
         next_id: CopyValue::new(1),
         bound: CopyValue::new(Vec::new()),
+        palette_views: CopyValue::new(Vec::new()),
+        palette_query: CopyValue::new(String::new()),
         viewport: Signal::new((0.0, 0.0)),
         hooks,
     });

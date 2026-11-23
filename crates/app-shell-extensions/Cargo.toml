@@ -52,6 +52,8 @@ architect-views = { git = "https://github.com/FastTrackStudios/architect", branc
 architect-scene = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
 dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41", default-features = false, features = ["lib"] }
 futures = "0.3"
+# COMMANDS_SHOW's arguments, as the Action List reads them.
+facet = "=0.50.0-rc.7"
 semver = "1"
 futures-timer = "3"
 serde_json = "1.0"

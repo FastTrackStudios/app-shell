@@ -596,3 +596,57 @@ fn bound_keys_hold_in_their_tabs_kind_before_the_keymap_and_the_windows_after() 
     // ⌘W was the binding's: no tab closed.
     assert!(after.pane(&PaneId::new("a")).is_some());
 }
+
+thread_local! {
+    static OVERLAY: RefCell<Option<(super::PaletteOverlay, bool, &'static str)>> = const { RefCell::new(None) };
+}
+
+#[allow(non_snake_case)]
+fn OverlayOpener() -> Element {
+    let shell = use_shell();
+    use_hook(move || {
+        let Some((overlay, drawn, query)) = OVERLAY.with(|o| *o.borrow()) else {
+            return;
+        };
+        if drawn {
+            shell.set_palette_view(
+                overlay,
+                Some(Callback::new(|()| rsx! { "drawn by the extension" })),
+            );
+        }
+        shell.open_overlay(overlay, query);
+    });
+    rsx! { "content" }
+}
+
+fn overlay_html(overlay: super::PaletteOverlay, drawn: bool, query: &'static str) -> String {
+    OVERLAY.with(|o| *o.borrow_mut() = Some((overlay, drawn, query)));
+    let mut dom = VirtualDom::new(|| {
+        rsx! {
+            AppShell { form: FormFactor::Desktop, OverlayOpener {} }
+        }
+    });
+    dom.rebuild_in_place();
+    for _ in 0..3 {
+        dom.process_events();
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+    }
+    dioxus_ssr::render(&dom)
+}
+
+#[test]
+fn a_view_draws_a_palette_overlay_in_the_shells_place() {
+    use super::PaletteOverlay;
+    let drawn = overlay_html(PaletteOverlay::Palette, true, "");
+    assert!(drawn.contains("drawn by the extension"), "{drawn}");
+    assert!(!drawn.contains("Search for anything"), "{drawn}");
+    // Without one, the shell's own, its field holding the query.
+    let own = overlay_html(PaletteOverlay::QuickOpen, false, "theme:");
+    assert!(own.contains("Open anything"), "{own}");
+    assert!(own.contains("value=\"theme:\""), "{own}");
+    assert_eq!(
+        PaletteOverlay::parse("quick-open"),
+        Some(PaletteOverlay::QuickOpen)
+    );
+    assert_eq!(PaletteOverlay::Palette.name(), "palette");
+}

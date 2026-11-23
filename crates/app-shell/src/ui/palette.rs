@@ -244,7 +244,7 @@ pub(crate) fn PaletteView(
         // A source answering later asks again.
         let _ = (s.revision)();
     }
-    let mut query = use_signal(String::new);
+    let mut query = use_signal(|| shell.take_palette_query());
     let mut chosen = use_signal(|| 0usize);
     let shown = rows(&items, sources.as_ref(), &query(), open);
     let n = shown.len();

@@ -373,8 +373,12 @@ pub fn use_extension_ui(host: Host, layout: Signal<Workspace>) -> ExtensionUi {
     // Around every tab: its pane's handle, its header's toolbars, the
     // extensions' rows in its menu, what they set on it.
     use_context_provider(move || ui.tab_hooks());
-    // Their keys (`[[keys]]`) in the shell's keymap, once it is attached.
+    // Their keys (`[[keys]]`) in the shell's keymap, and the views that
+    // draw its palette overlays (`[[palette_views]]`), once it is
+    // attached; `COMMANDS_SHOW` opens one.
     crate::keys::use_keys(ui);
+    crate::palette::use_palette_views(ui);
+    crate::palette::use_show_action(ui);
     // The toolbar editor's state, shared by the window's toolbars.
     let _ = crate::toolbar_editor::provide_editor();
     // A toolbar that is a pane of its own (a dock's, a float, a window)

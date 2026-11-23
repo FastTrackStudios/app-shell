@@ -61,6 +61,14 @@ id = "LAB_NOTES_GO"
 name = "Go to a note"
 params = '{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}'
 
+[[views]]
+id = "finder"
+title = "Find a note"
+
+[[palette_views]]
+overlay = "palette"
+view = "finder"
+
 [[palette_sources]]
 id = "notes"
 title = "Notes"
@@ -83,6 +91,12 @@ fn Editor() -> Element {
     rsx! { "editor in {id} showing {state} at {view_state}" }
 }
 
+/// Its palette: ⌘K drawn by the extension.
+#[component]
+fn Finder() -> Element {
+    rsx! { "notes finder" }
+}
+
 struct Notes;
 
 impl Extension for Notes {
@@ -92,6 +106,7 @@ impl Extension for Notes {
 
     fn build(&self, ext: &mut Builder) {
         ext.view("editor", Editor)
+            .view("finder", Finder)
             .action("LAB_NOTES_FIND", |_| async {
                 Ok(serde_json::json!({ "items": [
                     { "id": "n1", "label": "Plan the week" },
@@ -245,4 +260,50 @@ fn an_extensions_palette_source_gives_the_palettes_rows() {
     dom.in_scope(ScopeId::ROOT, || sources.run(&first));
     settle(&mut dom);
     assert_eq!(WENT.with(|w| w.borrow().clone()), ["n1"]);
+}
+
+#[test]
+fn an_extensions_palette_view_draws_the_palette_and_commands_show_opens_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let list = ActionList::new();
+    let host = Host::new(list.clone(), SharedSections::new(Registry::new()));
+    let ext = Extensions::new(host, Installs::new(tmp.path().join("i")))
+        .with_linked(&Notes)
+        .unwrap();
+    let _ = ext.sync();
+    HOST.with(|h| *h.borrow_mut() = Some(ext.host().clone()));
+    let mut dom = VirtualDom::new(app);
+    dom.rebuild_in_place();
+    settle(&mut dom);
+    let ui = UI.with(|u| u.borrow().unwrap());
+    // A view the palette draws is not a tab kind.
+    let kinds: Vec<String> =
+        dom.in_runtime(|| ui.tab_kinds().iter().map(|k| k.id.clone()).collect());
+    assert!(!kinds.contains(&"lab.notes/finder".to_owned()), "{kinds:?}");
+    // A tab drawn hands the extensions the shell.
+    ext.host()
+        .open_view(
+            "lab.notes",
+            "editor",
+            None,
+            None,
+            Invocation::new(InvocationSource::App),
+        )
+        .unwrap();
+    settle(&mut dom);
+
+    let run = |dom: &mut VirtualDom, args: &str| {
+        let out = block_on(list.run_json_async("COMMANDS_SHOW", args.as_bytes()));
+        assert!(out.is_ok(), "{out:?}");
+        settle(dom);
+        dioxus_ssr::render(dom)
+    };
+    let html = run(&mut dom, r#"{"overlay":"palette"}"#);
+    assert!(html.contains("notes finder"), "{html}");
+    // ⌘O is still the shell's own, its field holding the query.
+    let html = run(&mut dom, r#"{"overlay":"quick-open","query":"plan"}"#);
+    assert!(!html.contains("notes finder"), "{html}");
+    assert!(html.contains("value=\"plan\""), "{html}");
+    let html = run(&mut dom, r#"{"overlay":"none"}"#);
+    assert!(!html.contains("Open anything"), "{html}");
 }

@@ -45,8 +45,8 @@ pub use overlay::{
 pub use palette::{PaletteSources, use_palette_sources};
 pub use popup::{MenuAction, MenuItem, Popup, PopupContent, PopupLayer};
 pub use shell::{
-    AppShell, BoundKey, FormFactor, KeyRun, KeyScope, KeymapHandle, SHELL_CSS, Shell, Tabs,
-    use_shell, use_window_layout, window_title,
+    AppShell, BoundKey, FormFactor, KeyRun, KeyScope, KeymapHandle, PaletteOverlay, SHELL_CSS,
+    Shell, Tabs, use_shell, use_window_layout, window_title,
 };
 pub use sidebar::{
     RIGHT_SIDEBAR_WIDTH, RightSidebarState, SIDEBAR_FOLD_BELOW, SIDEBAR_MAX, SIDEBAR_MIN,
