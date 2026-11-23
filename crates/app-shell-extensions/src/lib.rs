@@ -29,6 +29,7 @@ pub mod keys;
 pub mod palette;
 pub mod panes;
 pub mod settings;
+pub mod settings_sheet;
 pub mod theme_ui;
 pub mod toolbar_editor;
 pub mod toolbar_ui;
@@ -44,7 +45,6 @@ pub mod remote;
 #[cfg(feature = "remote")]
 pub mod scene_widget;
 
-#[cfg(feature = "page")]
 pub mod kit;
 #[cfg(feature = "page")]
 pub mod page;

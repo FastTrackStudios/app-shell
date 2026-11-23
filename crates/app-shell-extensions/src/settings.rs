@@ -4,7 +4,8 @@
 //! show, in the window's signals ([`use_settings`]).
 //!
 //! What draws the page is not here: the settings extension's window
-//! (`APP_SETTINGS`, `crate::window_ui`), which reads the app's sections
+//! (`APP_SETTINGS`, `crate::window_ui`; the extension is
+//! `crate::settings_sheet`), which reads the app's sections
 //! (`settings.sections`) and draws an extension's own section with its
 //! view ([`SectionViews`]). Loaded extensions' sections come and go with
 //! them (`crate::ui::use_extension_sections`); their values are the
@@ -71,6 +72,32 @@ pub fn try_use_settings() -> Option<Settings> {
 }
 
 impl Settings {
+    /// Settings of their own, in no context: what a settings page drawn
+    /// out of process keeps (its values the app's, asked for). Call it
+    /// where a hook may make signals (`use_hook`).
+    #[must_use]
+    pub fn detached(
+        registry: Registry,
+        values: ScopedValues,
+        on_change: Option<Callback<SettingsChange>>,
+    ) -> Self {
+        Self {
+            registry: Signal::new(registry),
+            values: Signal::new(values),
+            open: Signal::new(None),
+            focus: Signal::new(None),
+            pages: Signal::new(BTreeSet::new()),
+            on_change: CopyValue::new(on_change),
+        }
+    }
+
+    /// The same settings over the sections `registry` has: the page's,
+    /// the app's and every extension's as its point delivers them.
+    #[must_use]
+    pub const fn with_registry(self, registry: Signal<Registry>) -> Self {
+        Self { registry, ..self }
+    }
+
     /// Sets `key` to `value` in its scope (a value it does not take, or
     /// one the org locked, is let go).
     pub fn set(&self, key: &str, value: Value) {

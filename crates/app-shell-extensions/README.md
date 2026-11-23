@@ -36,6 +36,17 @@ path, end to end.
 what the window does for it: process views' `set_view_state`, `EXT_CHECK`'s
 frame renderer, what goes when an extension's session ends.
 
+## The settings page
+
+`settings_sheet` is the settings extension (`SettingsSheet`, manifest
+`extensions/settings.toml`), moved from Architect's
+`architect-settings-sheet`: ⌘, (`APP_SETTINGS`, an app id the app allows
+it) opens its window, a sheet over the app, its sections what the app and
+every extension contribute to `settings.sections`, drawn by
+`SettingsPage` over the window's `Settings` (an extension's own section by
+its view, `SectionViews`). Link it in (`Extensions::with_linked`), or run
+it as a process: `app-shell-settings`, feature `guest`.
+
 ## Why a workspace of its own
 
 Architect pins dioxus by git rev (`430cfb56`); app-shell is on the

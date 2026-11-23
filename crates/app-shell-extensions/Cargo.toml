@@ -29,6 +29,9 @@ remote = [
 # The extensions page (`page`): search, install with consent, update, pin,
 # grants and logs.
 page = ["architect-extensions/manager"]
+# The settings page as its own process (`app-shell-settings`): what a
+# development copy of the settings extension runs.
+guest = ["architect-extensions/guest", "architect-extensions-dioxus/guest"]
 # The platform's file pickers: the portal on Linux, the system's panels on
 # macOS and Windows (`rfd`), the document and photo pickers on iOS.
 pickers = [
@@ -41,6 +44,15 @@ pickers = [
     "dep:block2",
     "dep:dispatch2",
 ]
+
+[[bin]]
+name = "app-shell-settings"
+path = "src/settings_main.rs"
+required-features = ["guest"]
+
+[[test]]
+name = "settings_sheet"
+required-features = ["guest"]
 
 [dependencies]
 app-shell = { path = "../app-shell", features = ["icons"] }
