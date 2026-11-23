@@ -5,7 +5,8 @@
 //! schema (a bad one a problem, not a failed load) and delivered to its
 //! owner live as extensions load and unload; a service called across two
 //! extensions (linked, Luau), with its provider missing or too old; a
-//! window opened as a sheet and as an OS window.
+//! window opened as a sheet (the shell's, from the first render) and as
+//! an OS window.
 
 #![allow(
     clippy::unwrap_used,
@@ -135,8 +136,13 @@ fn window_app() -> Element {
     LAYOUT.with(|l| *l.borrow_mut() = Some(layout));
     let ui = app_shell_extensions::interface::use_extension_ui(host, layout);
     rsx! {
-        AppShell { layout, kinds: ui.tab_kinds(), tabs: Tabs::On, form: FormFactor::Desktop }
-        app_shell_extensions::interface::ExtensionOverlays { ui }
+        AppShell {
+            layout,
+            kinds: ui.tab_kinds(),
+            tabs: Tabs::On,
+            form: FormFactor::Desktop,
+            layers: rsx! { app_shell_extensions::interface::ExtensionOverlays { ui } },
+        }
     }
 }
 
@@ -171,6 +177,9 @@ fn a_window_opens_as_a_sheet_and_as_an_os_window() {
     run(&list, "LAB_PANELS_PREFS", json!({"tab": "audio"})).unwrap();
     settle(&mut main);
     assert_eq!(DRAWN.with(|d| d.borrow().clone()), ["prefs"]);
+    // The shell's own sheet, with no tab drawn yet.
+    let html = dioxus_ssr::render(&main);
+    assert!(html.contains("as-sheet"), "{html}");
     let windows = run(&list, "EXT_WINDOWS", Value::Null).unwrap();
     let prefs = windows["windows"]
         .as_array()

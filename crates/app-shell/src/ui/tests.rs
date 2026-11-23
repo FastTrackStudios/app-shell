@@ -650,3 +650,22 @@ fn a_view_draws_a_palette_overlay_in_the_shells_place() {
     );
     assert_eq!(PaletteOverlay::Palette.name(), "palette");
 }
+
+#[allow(non_snake_case)]
+fn LayerReadingTheShell() -> Element {
+    let shell = use_shell();
+    let tabs = shell.layout.peek().panes.len();
+    rsx! { "a layer over {tabs} tabs" }
+}
+
+#[test]
+fn layers_draw_at_the_root_in_the_shells_context_from_the_first_render() {
+    let mut dom = VirtualDom::new(|| {
+        rsx! {
+            AppShell { form: FormFactor::Desktop, layers: rsx! { LayerReadingTheShell {} }, "content" }
+        }
+    });
+    dom.rebuild_in_place();
+    let html = dioxus_ssr::render(&dom);
+    assert!(html.contains("a layer over 0 tabs"), "{html}");
+}

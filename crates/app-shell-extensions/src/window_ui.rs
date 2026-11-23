@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use crate::settings::{
     Owner, json_of as setting_json, try_use_settings, value_of as setting_value,
 };
-use app_shell::ui::SheetSpec;
+use app_shell::ui::{SheetSpec, use_shell};
 use app_shell::{Pane, PaneId, Rect, Target};
 use architect::action::{ActionCaller, ActionError, ActionFuture, ActionInfo, Effect};
 use dioxus::prelude::*;
@@ -78,8 +78,8 @@ pub fn window_pane(key: &str) -> PaneId {
     PaneId::new(format!("{WINDOW_PANE}{key}"))
 }
 
-/// Every open extension sheet: mount it once at the root, over the
-/// window (`ExtensionOverlays` does). Its windows of kind `window` are
+/// Every open extension sheet, as the shell's sheets: mount it once under
+/// the shell (`ExtensionOverlays` does, in `AppShell`'s `layers`). Its windows of kind `window` are
 /// windows of the layout ([`use_window_panes`]), not drawn here.
 #[component]
 pub fn ExtensionWindows(ui: ExtensionUi) -> Element {
@@ -95,77 +95,40 @@ pub fn ExtensionWindows(ui: ExtensionUi) -> Element {
 
 /// A sheet: the shell's own (a card over the window on a desk, a sheet
 /// from the foot on a phone) holding the extension's view, open while the
-/// window is; the person closing it closes it in the host. With no shell
-/// to ask (nothing under `AppShell` has drawn yet), a card drawn here.
+/// window is; the person closing it closes it in the host.
 #[component]
 fn ExtensionSheet(ui: ExtensionUi, open: OpenWindow) -> Element {
-    let shell = *ui.shell.peek();
+    let shell = use_shell();
     let sheet = use_hook(|| CopyValue::new(None::<app_shell::ui::SheetId>));
-    {
-        let open = open.clone();
-        use_hook(move || {
-            let Some(shell) = shell else { return };
-            let (ext, view) = (open.extension.clone(), open.window.view.clone());
-            let (close_ext, close_id) = (open.extension.clone(), open.window.id.clone());
-            let title = if open.window.title.is_empty() {
-                open.window.id.clone()
-            } else {
-                open.window.title.clone()
-            };
-            let spec = SheetSpec::new(move |()| {
-                rsx! {
-                    div { style: "flex: 1; min-height: 0; display: flex; flex-direction: column;",
-                        ExtensionView { ui, extension: ext.clone(), view: view.clone(), bare: true }
-                    }
+    use_hook(move || {
+        let (ext, view) = (open.extension.clone(), open.window.view.clone());
+        let (close_ext, close_id) = (open.extension.clone(), open.window.id.clone());
+        let title = if open.window.title.is_empty() {
+            open.window.id.clone()
+        } else {
+            open.window.title.clone()
+        };
+        let spec = SheetSpec::new(move |()| {
+            rsx! {
+                div { style: "flex: 1; min-height: 0; display: flex; flex-direction: column;",
+                    ExtensionView { ui, extension: ext.clone(), view: view.clone(), bare: true }
                 }
-            })
-            .title(title)
-            .on_close(move |()| {
-                ui.host().close_window(&close_ext, &close_id);
-            });
-            let mut sheet = sheet;
-            sheet.set(Some(shell.open_sheet(spec)));
+            }
+        })
+        .title(title)
+        .on_close(move |()| {
+            ui.host().close_window(&close_ext, &close_id);
         });
-    }
+        let mut sheet = sheet;
+        sheet.set(Some(shell.open_sheet(spec)));
+    });
     use_drop(move || {
-        if let (Some(shell), Some(id)) = (shell, *sheet.peek()) {
+        if let Some(id) = *sheet.peek() {
             shell.close_sheet(id);
         }
     });
-    if shell.is_some() {
-        return rsx! {};
-    }
-    let t = crate::theme_ui::shell_theme();
-    let (ext, id) = (open.extension.clone(), open.window.id.clone());
-    let close = move |_| {
-        ui.host().close_window(&ext, &id);
-    };
-    let size = match (open.window.width, open.window.height) {
-        (None, None) => "width: 92%; max-width: 1100px; height: 86%; max-height: 760px;".to_owned(),
-        (w, h) => format!(
-            "width: {}px; max-width: 92%; height: {}px; max-height: 86%;",
-            w.unwrap_or(720.0),
-            h.unwrap_or(560.0)
-        ),
-    };
-    rsx! {
-        div {
-            style: "position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: {SHEET_LAYER}; \
-                    background: {t.scrim}; display: flex; align-items: center; justify-content: center;",
-            onclick: close,
-            div {
-                style: "{size} display: flex; overflow: hidden; \
-                        border-radius: 14px; background: {t.desk}; border: 1px solid {t.rule}; box-shadow: {t.shadow_float}; \
-                        font-family: {t.font}; color: {t.ink};",
-                onclick: move |e| e.stop_propagation(),
-                ExtensionView { ui, extension: open.extension.clone(), view: open.window.view.clone(), bare: true }
-            }
-        }
-    }
+    rsx! {}
 }
-
-/// Where a sheet drawn here goes over the window.
-const SHEET_LAYER: u32 = 70;
 
 /// Keeps the extensions' windows of kind `window` windows of the layout:
 /// each one open is a pane of its view ([`window_pane`]) in a window of

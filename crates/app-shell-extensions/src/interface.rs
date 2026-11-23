@@ -12,8 +12,11 @@
 //! let layout = use_signal(Workspace::new);
 //! let ui = use_extension_ui(host.clone(), layout);
 //! rsx! {
-//!     AppShell { layout, kinds: ui.tab_kinds(), destinations: ui.destinations(), … }
-//!     ExtensionOverlays { ui }
+//!     AppShell {
+//!         layout, kinds: ui.tab_kinds(), destinations: ui.destinations(),
+//!         layers: rsx! { ExtensionOverlays { ui } },
+//!         …
+//!     }
 //! }
 //! // and, in a component under the shell (its top bar):
 //! use_extension_bar(ui);
@@ -485,10 +488,14 @@ pub fn use_extension_ui(host: Host, layout: Signal<Workspace>) -> ExtensionUi {
     ui
 }
 
-/// The popups and overlays extensions opened, over the window: mount it
-/// once, last, at the root.
+/// The popups and overlays extensions opened, their sheets, the toolbar
+/// editor and the host's own UI, over the window: mount it once, in
+/// `AppShell`'s `layers`. It hands `ui` the shell as it first draws, so
+/// the extensions have it (their keys, sheets, palette views) before any
+/// tab does.
 #[component]
 pub fn ExtensionOverlays(ui: ExtensionUi) -> Element {
+    ui.attach(app_shell::ui::use_shell());
     let layers = (ui.layers)();
     rsx! {
         crate::window_ui::ExtensionWindows { ui }

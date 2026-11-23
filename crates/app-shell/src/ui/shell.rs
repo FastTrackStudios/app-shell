@@ -1241,6 +1241,12 @@ pub fn AppShell(
     accessory: Option<Element>,
     /// The command palette's entries (Mod+K, `Shell::open_palette`).
     palette: Option<Callback<(), Vec<PaletteItem>>>,
+    /// Drawn over everything at the shell's root, in its context
+    /// ([`use_shell`] works there from the first render): an app's or its
+    /// extensions' own layers (`app_shell_extensions::ExtensionOverlays`).
+    /// Each places itself (`position: absolute`, a `z-index`); the
+    /// shell's menus, sheets and toasts come after it.
+    layers: Option<Element>,
     /// The content area, without a `layout` or with tabs off.
     children: Element,
 ) -> Element {
@@ -1541,6 +1547,7 @@ pub fn AppShell(
             if switcher {
                 Switcher {}
             }
+            {layers}
             PopupLayer {}
             SheetLayer {}
             ToastLayer {}

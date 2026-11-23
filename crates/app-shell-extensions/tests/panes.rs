@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use app_shell::ui::{AppShell, FormFactor, PaletteSources, Tabs};
 use app_shell::{PaneId, Workspace};
-use app_shell_extensions::{ExtensionUi, use_extension_ui};
+use app_shell_extensions::{ExtensionOverlays, ExtensionUi, use_extension_ui};
 use architect::action::{ActionList, Invocation, InvocationSource};
 use architect_extensions::extensions::Extensions;
 use architect_extensions::host::{Host, SharedSections};
@@ -146,6 +146,7 @@ fn app() -> Element {
             tabs: Tabs::On,
             form: FormFactor::Desktop,
             destinations: ui.destinations(),
+            layers: rsx! { ExtensionOverlays { ui } },
         }
     }
 }

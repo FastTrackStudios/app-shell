@@ -26,7 +26,10 @@ after its title. Their keys (`[[keys]]`, and ⌘Z / ⇧⌘Z as `DOC_UNDO` /
 (`[[palette_views]]`) is the shell's palette view for it, and
 `COMMANDS_SHOW` opens one (`palette`). Their tabs are the app's destinations, their status items
 and bar buttons the top bar's items and the `title` and `tabs` slots its
-fillers (`use_extension_bar`). The phone's Typing Toolbar is `TypingBar`,
+fillers (`use_extension_bar`). `ExtensionOverlays` goes in `AppShell`'s `layers`: drawn in
+the shell's context from the first render, it hands the extensions the
+shell (their keys, sheets and palette views) before any tab draws. The
+phone's Typing Toolbar is `TypingBar`,
 which the app places over the keyboard. `tests/panes.rs` is the whole
 path, end to end.
 `install()` (called by `interface::use_extension_ui`) hands the runtime
