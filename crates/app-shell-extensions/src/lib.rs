@@ -66,6 +66,31 @@ pub fn install() {
     architect_extensions::hostapi::on_forget(pickers_ios::stop_scopes);
 }
 
+/// The process extensions whose views the window draws: hand them to the
+/// app's runner (`ProcessRunner::new()?.with_processes(processes())`), and
+/// every pane, embed and overlay finds them, in the main window and in
+/// pop-outs alike, without a context of the app's. A `Processes` the app
+/// provides as a Dioxus context wins over these.
+#[cfg(all(feature = "remote", unix))]
+#[must_use]
+pub fn processes() -> architect_extensions::process::Processes {
+    PROCESSES
+        .get_or_init(architect_extensions::process::Processes::default)
+        .clone()
+}
+
+#[cfg(all(feature = "remote", unix))]
+static PROCESSES: std::sync::OnceLock<architect_extensions::process::Processes> =
+    std::sync::OnceLock::new();
+
+/// The processes a view here draws from: the context's, else the ones the
+/// app gave its runner ([`processes`]); none when it gave it neither.
+#[cfg(all(feature = "remote", unix))]
+pub(crate) fn use_processes() -> Option<architect_extensions::process::Processes> {
+    dioxus::prelude::try_use_context::<architect_extensions::process::Processes>()
+        .or_else(|| PROCESSES.get().cloned())
+}
+
 pub use embed_views::{BaseViewEmbed, EmbedAsk, EmbedPages, EmbedView, GuestEmbedView, WidgetView};
 
 pub use bar::{Slot, use_extension_bar};

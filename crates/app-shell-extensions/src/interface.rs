@@ -766,7 +766,7 @@ pub fn ExtensionView(
         };
     }
     #[cfg(all(feature = "remote", unix))]
-    if let Some(processes) = try_use_context::<architect_extensions::process::Processes>() {
+    if let Some(processes) = crate::use_processes() {
         // Its scenes draw over the whole app only when it was granted that.
         let overlay = host
             .capabilities(&extension)
@@ -856,7 +856,7 @@ fn OverlayLayer(
         return rsx! { LinkedOverlay { root, input } };
     }
     #[cfg(all(feature = "remote", unix))]
-    if let Some(processes) = try_use_context::<architect_extensions::process::Processes>() {
+    if let Some(processes) = crate::use_processes() {
         return rsx! {
             crate::remote::RemoteOverlay {
                 processes,

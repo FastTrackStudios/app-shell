@@ -274,7 +274,7 @@ fn draw(
     }
     #[cfg(all(feature = "remote", unix))]
     if let Some(view) = spec.embed.view.clone()
-        && let Some(processes) = try_use_context::<architect_extensions::process::Processes>()
+        && let Some(processes) = crate::use_processes()
     {
         return rsx! {
             div { class: "embed", "data-embed": "{key}", style: "{BOX}",
