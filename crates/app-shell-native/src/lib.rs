@@ -117,7 +117,7 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         shots: Rc::new(RefCell::new(config.control.as_deref().map(shot::serve))),
         net: net::AppNetProvider::shared(&proxy),
     });
-    let mut vdom = VirtualDom::new_with_props(
+    let vdom = VirtualDom::new_with_props(
         MainRoot,
         MainRootProps {
             app: main,
@@ -473,7 +473,7 @@ impl App {
             attributes =
                 attributes.with_position(LogicalPosition::new(f64::from(b.x), f64::from(b.y)));
         }
-        let mut vdom = VirtualDom::new_with_props(
+        let vdom = VirtualDom::new_with_props(
             PopoutRoot,
             PopoutRootProps {
                 app: self.popout,
