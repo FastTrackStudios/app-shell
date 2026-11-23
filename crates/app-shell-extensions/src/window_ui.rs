@@ -2,16 +2,17 @@
 //! machinery the core keeps (`docs/content/architecture/extensions.md`,
 //! "Windows, points and services").
 //!
-//! [`ExtensionWindows`] draws each open `[[windows]]` (`architect_extensions::windows`):
-//! a `sheet` as a scrim and a card over the main window (on a phone, the
-//! whole screen) holding the extension's view; a `window` as an OS window
-//! of its own, through the workspace's pop-out machinery
-//! (`architect_workspace::Popout::page`) where the platform gives one
-//! (`architect_workspace::Windows` in context), else as a sheet. Either
-//! way the view is drawn as any of its views is ([`ExtensionView`]:
-//! linked in, a process's or a WASI component's remote document, a page),
-//! and follows the theme live: a sheet is in the app's document; an OS
-//! window carries the shell and the theme's `:root` sheet into its own.
+//! Each open `[[windows]]` (`architect_extensions::windows`) is drawn by
+//! app-shell: a `sheet` as the shell's sheet ([`ExtensionWindows`]: a
+//! card over the window on a desk, from the foot on a phone) holding the
+//! extension's view; a `window` as a window of the layout
+//! ([`use_window_panes`]): a pane of its view, popped out, which
+//! app-shell opens as an OS window where the platform has them
+//! (`app_shell::ui::Windows`, app-shell-native) and draws in the page
+//! where it has not. The pop-out's root is the app's, so it draws the view
+//! with the main window's tab kinds ([`ExtensionPopout`] does it all).
+//! Either way the view is drawn as any of its views is ([`ExtensionView`]:
+//! linked in, a process's or a WASI component's remote document, a page).
 //!
 //! [`use_settings_window`] joins the app's settings (`architect_settings`'s
 //! [`SettingsHandle`]) to the settings extension's window: the app's own
@@ -20,13 +21,13 @@
 //! page, and the values for a sheet drawn out of process
 //! (`APP_SETTINGS_VALUES`, `APP_SETTINGS_SET`).
 
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use app_shell::ui::SheetSpec;
+use app_shell::{Pane, PaneId, Rect, Target};
 use architect::action::{ActionCaller, ActionError, ActionFuture, ActionInfo, Effect};
 use architect_settings::{Owner, try_use_settings};
-use architect_shell::try_use_shell;
 use dioxus::prelude::*;
 use futures::StreamExt as _;
 use futures::channel::mpsc;
@@ -65,48 +66,78 @@ pub(crate) fn use_open_windows(host: &Host) -> Signal<Vec<OpenWindow>> {
     open
 }
 
-fn phone() -> bool {
-    try_use_shell().is_some_and(|s| s.form() == architect_shell::FormFactor::Phone)
+/// The prefix of the pane an extension's OS window is (`ext-window:`
+/// then its key).
+pub const WINDOW_PANE: &str = "ext-window:";
+
+/// The pane extension window `key` is in, when it is a window.
+#[must_use]
+pub fn window_pane(key: &str) -> PaneId {
+    PaneId::new(format!("{WINDOW_PANE}{key}"))
 }
 
-/// Every open extension window: mount it once at the root, over the
-/// window (`ExtensionOverlays` does).
+/// Every open extension sheet: mount it once at the root, over the
+/// window (`ExtensionOverlays` does). Its windows of kind `window` are
+/// windows of the layout ([`use_window_panes`]), not drawn here.
 #[component]
 pub fn ExtensionWindows(ui: ExtensionUi) -> Element {
     let open = ui.windows();
-    let os = try_consume_context::<architect_workspace::Windows>();
     rsx! {
         for w in open {
-            if w.window.kind == WindowKind::Window && os.is_some() {
-                OsWindow { key: "{w.key()}", ui, open: w }
-            } else {
-                Sheet { key: "{w.key()}", ui, open: w }
+            if w.window.kind != WindowKind::Window {
+                ExtensionSheet { key: "{w.key()}", ui, open: w }
             }
         }
     }
 }
 
-/// A sheet over the main window: a scrim (a click on it closes), a card
-/// of the window's size holding its view.
+/// A sheet: the shell's own (a card over the window on a desk, a sheet
+/// from the foot on a phone) holding the extension's view, open while the
+/// window is; the person closing it closes it in the host. With no shell
+/// to ask (nothing under `AppShell` has drawn yet), a card drawn here.
 #[component]
-fn Sheet(ui: ExtensionUi, open: OpenWindow) -> Element {
+fn ExtensionSheet(ui: ExtensionUi, open: OpenWindow) -> Element {
+    let shell = *ui.shell.peek();
+    let sheet = use_hook(|| CopyValue::new(None::<app_shell::ui::SheetId>));
+    {
+        let open = open.clone();
+        use_hook(move || {
+            let Some(shell) = shell else { return };
+            let (ext, view) = (open.extension.clone(), open.window.view.clone());
+            let (close_ext, close_id) = (open.extension.clone(), open.window.id.clone());
+            let title = if open.window.title.is_empty() {
+                open.window.id.clone()
+            } else {
+                open.window.title.clone()
+            };
+            let spec = SheetSpec::new(move |()| {
+                rsx! {
+                    div { style: "flex: 1; min-height: 0; display: flex; flex-direction: column;",
+                        ExtensionView { ui, extension: ext.clone(), view: view.clone(), bare: true }
+                    }
+                }
+            })
+            .title(title)
+            .on_close(move |()| {
+                ui.host().close_window(&close_ext, &close_id);
+            });
+            let mut sheet = sheet;
+            sheet.set(Some(shell.open_sheet(spec)));
+        });
+    }
+    use_drop(move || {
+        if let (Some(shell), Some(id)) = (shell, *sheet.peek()) {
+            shell.close_sheet(id);
+        }
+    });
+    if shell.is_some() {
+        return rsx! {};
+    }
     let t = crate::theme_ui::shell_theme();
     let (ext, id) = (open.extension.clone(), open.window.id.clone());
     let close = move |_| {
         ui.host().close_window(&ext, &id);
     };
-    let view = rsx! {
-        ExtensionView { ui, extension: open.extension.clone(), view: open.window.view.clone(), bare: true }
-    };
-    if phone() {
-        return rsx! {
-            div {
-                style: "position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: {architect_shell::layer::POPOVER}; \
-                        display: flex; flex-direction: column; background: {t.desk}; font-family: {t.font}; color: {t.ink};",
-                {view}
-            }
-        };
-    }
     let size = match (open.window.width, open.window.height) {
         (None, None) => "width: 92%; max-width: 1100px; height: 86%; max-height: 760px;".to_owned(),
         (w, h) => format!(
@@ -117,7 +148,7 @@ fn Sheet(ui: ExtensionUi, open: OpenWindow) -> Element {
     };
     rsx! {
         div {
-            style: "position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: {architect_shell::layer::POPOVER}; \
+            style: "position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: {SHEET_LAYER}; \
                     background: {t.scrim}; display: flex; align-items: center; justify-content: center;",
             onclick: close,
             div {
@@ -125,93 +156,86 @@ fn Sheet(ui: ExtensionUi, open: OpenWindow) -> Element {
                         border-radius: 14px; background: {t.desk}; border: 1px solid {t.rule}; box-shadow: {t.shadow_float}; \
                         font-family: {t.font}; color: {t.ink};",
                 onclick: move |e| e.stop_propagation(),
-                {view}
+                ExtensionView { ui, extension: open.extension.clone(), view: open.window.view.clone(), bare: true }
             }
         }
     }
 }
 
-/// An OS window of its own: opened through the platform's windows when it
-/// mounts, closed when it unmounts (the window closed in the host); the
-/// person closing it closes it in the host.
-#[component]
-fn OsWindow(ui: ExtensionUi, open: OpenWindow) -> Element {
-    let os = try_consume_context::<architect_workspace::Windows>();
-    // What a view reads from the main window's context, carried into its
-    // own: the shell and the theme (it follows them live), how a process's
-    // or a page's view is drawn and measured, the app's settings.
-    let carried = use_hook(|| {
-        let bridge = architect_workspace::Bridge::new()
-            .context::<Signal<architect_shell::Shell>>()
-            .context::<architect_theme::ThemeHandle>()
-            .context::<architect_theme::RootCss>()
-            .context::<crate::interface::ViewPages>()
-            .context::<crate::interface::ProcessViews>()
-            .context::<architect_views::Meters>()
-            .context::<architect_settings::SettingsHandle>()
-            .context::<architect_settings::SectionViews>();
-        #[cfg(all(feature = "remote", unix))]
-        let bridge = bridge.context::<architect_extensions::process::Processes>();
-        bridge
-    });
-    let id = architect_workspace::WindowId(format!("ext-{}", open.key().replace('/', "-")));
-    {
-        let (id, os) = (id.clone(), os.clone());
-        use_hook(move || {
-            let Some(os) = os else { return };
-            let (ext, view) = (open.extension.clone(), open.window.view.clone());
-            let draw: Rc<dyn Fn() -> Element> = Rc::new(move || {
-                rsx! { WindowPage { ui, extension: ext.clone(), view: view.clone() } }
-            });
-            let (ext, wid) = (open.extension.clone(), open.window.id.clone());
-            // Placed by the platform, at its size (720 × 560 unless it says).
-            let bounds = None;
-            let title = if open.window.title.is_empty() {
-                open.window.id.clone()
-            } else {
-                open.window.title.clone()
-            };
-            os.0.open(architect_workspace::Popout::page(
-                id,
-                title,
-                bounds,
-                carried,
-                draw,
-                Rc::new(move || {
-                    ui.host().close_window(&ext, &wid);
-                }),
-            ));
-        });
-    }
-    use_drop(move || {
-        if let Some(os) = os {
-            os.0.close(&id);
-        }
-    });
-    rsx! {}
-}
+/// Where a sheet drawn here goes over the window.
+const SHEET_LAYER: u32 = 70;
 
-/// An OS window's document: the ground in the theme's colours, the
-/// theme's `:root` sheet for `var(--…)`, and the view filling it.
-#[component]
-fn WindowPage(ui: ExtensionUi, extension: String, view: String) -> Element {
-    let t = crate::theme_ui::shell_theme();
-    let root = architect_theme::try_use_root_css().map(|r| r());
-    let ground = format!(
-        "html, body {{ margin: 0; padding: 0; height: 100%; background: {}; }}",
-        t.desk
-    );
-    rsx! {
-        document::Style { {ground} }
-        if let Some(css) = root {
-            document::Style { {css} }
+/// Keeps the extensions' windows of kind `window` windows of the layout:
+/// each one open is a pane of its view ([`window_pane`]) in a window of
+/// its own (an OS window where the platform has them, else one drawn in
+/// the page, as app-shell does every pop-out); the host closing it closes
+/// its pane, and its pane closed, or back in the main window (the person
+/// closed its OS window), closes it in the host.
+pub(crate) fn use_window_panes(ui: ExtensionUi) {
+    let placed = use_hook(|| CopyValue::new(BTreeSet::<String>::new()));
+    use_effect(move || {
+        let open: Vec<OpenWindow> = ui
+            .windows()
+            .into_iter()
+            .filter(|w| w.window.kind == WindowKind::Window)
+            .collect();
+        let layout = ui.layout();
+        let layout = layout.read();
+        let keys: BTreeSet<String> = open.iter().map(OpenWindow::key).collect();
+        let mut placed = placed;
+        // Gone from the host: its pane closes.
+        let gone: Vec<String> = placed.peek().difference(&keys).cloned().collect();
+        // Gone from its window: it closes in the host.
+        let left: Vec<&OpenWindow> = open
+            .iter()
+            .filter(|w| placed.peek().contains(&w.key()))
+            .filter(|w| {
+                layout
+                    .locate(&window_pane(&w.key()))
+                    .is_none_or(|l| l.window == 0)
+            })
+            .collect();
+        let new: Vec<&OpenWindow> = open
+            .iter()
+            .filter(|w| !placed.peek().contains(&w.key()))
+            .collect();
+        drop(layout);
+        for key in gone {
+            placed.write().remove(&key);
+            let pane = window_pane(&key);
+            ui.apply(|w| w.close(&pane));
         }
-        div {
-            style: "position: relative; width: 100vw; height: 100vh; display: flex; overflow: hidden; \
-                    background: {t.desk}; color: {t.ink}; font-family: {t.font}; font-size: 13px;",
-            ExtensionView { ui, extension, view, bare: true }
+        for w in left {
+            placed.write().remove(&w.key());
+            let pane = window_pane(&w.key());
+            ui.apply(|l| l.close(&pane));
+            ui.host().close_window(&w.extension, &w.window.id);
         }
-    }
+        for w in new {
+            placed.write().insert(w.key());
+            let title = if w.window.title.is_empty() {
+                w.window.id.clone()
+            } else {
+                w.window.title.clone()
+            };
+            let mut pane = Pane::new(
+                window_pane(&w.key()).0,
+                format!("{}/{}", w.extension, w.window.view),
+                title,
+            );
+            if !w.state.is_null() {
+                pane.state = w.state.to_string();
+            }
+            // Placed by the platform, at its size (720 × 560 unless it says).
+            let bounds = (w.window.width.is_some() || w.window.height.is_some()).then(|| Rect {
+                x: 120.0,
+                y: 90.0,
+                w: w.window.width.unwrap_or(720.0),
+                h: w.window.height.unwrap_or(560.0),
+            });
+            ui.apply(|l| l.open(pane, Target::Window(bounds)));
+        }
+    });
 }
 
 // ---- the settings page's window ---------------------------------------
@@ -475,4 +499,41 @@ fn settings_window(host: &Host, open: &[OpenWindow]) -> Option<OpenWindow> {
     open.iter()
         .find(|w| w.extension == ext && w.window.id == id)
         .cloned()
+}
+
+thread_local! {
+    /// The main window's [`ExtensionUi`]: what a pop-out's root draws the
+    /// extensions' views with (its own `VirtualDom`, on the same thread).
+    static MAIN: std::cell::Cell<Option<ExtensionUi>> = const { std::cell::Cell::new(None) };
+}
+
+/// Keeps `ui` as the main window's, for the pop-outs.
+pub(crate) fn set_main(ui: ExtensionUi) {
+    MAIN.with(|m| m.set(Some(ui)));
+}
+
+/// The main window's [`ExtensionUi`], from a pop-out window's root.
+#[must_use]
+pub fn main_ui() -> Option<ExtensionUi> {
+    MAIN.with(std::cell::Cell::get)
+}
+
+/// A pop-out window's shell, drawing the extensions' views as the main
+/// window does: what an app hands `app_shell_native::launch` as its
+/// `popout` (or mounts in its own), `kinds` its own tab kinds.
+#[component]
+pub fn ExtensionPopout(
+    window: app_shell::WindowId,
+    #[props(default)] kinds: app_shell::ui::TabKinds,
+) -> Element {
+    let layout = app_shell::ui::use_window_layout();
+    let ui = main_ui();
+    use_context_provider(move || ui.map(|ui| ui.tab_hooks()).unwrap_or_default());
+    let mut kinds = kinds;
+    if let Some(ui) = ui {
+        ui.register_kinds(&mut kinds);
+    }
+    rsx! {
+        app_shell::ui::AppShell { layout, kinds, window }
+    }
 }

@@ -16,20 +16,18 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use app_shell::ui::{AppShell, FormFactor, Tabs, WindowSystem, Windows};
+use app_shell::{PaneId, Rect, WindowId, Workspace};
 use architect::action::ActionList;
 use architect_extensions::extensions::Extensions;
-use architect_extensions::host::{Event, Host, LoadError, SharedSections};
-use architect_extensions::hostcall::{HostError, HostRequest};
+use architect_extensions::host::{Host, SharedSections};
 use architect_extensions::install::Installs;
-use architect_extensions::interop::WindowKind;
-use architect_extensions::linked::{Builder, Extension, Handle};
-use architect_extensions::{Manifest, ManifestError, Origin, Package};
+use architect_extensions::linked::{Builder, Extension};
+use architect_extensions::{Origin, Package};
 use architect_extensions_dioxus::BuilderExt as _;
 use architect_settings::Registry;
-use architect_workspace::{Popout, WindowId, WindowSystem, Windows};
 use dioxus::prelude::*;
 use futures::executor::block_on;
 use serde_json::{Value, json};
@@ -45,22 +43,12 @@ fn run(list: &ActionList, id: &str, args: Value) -> Result<Value, String> {
         .map_err(|e| e.to_string())
 }
 
-fn until(what: &str, ok: impl Fn() -> bool) {
-    let start = Instant::now();
-    while !ok() {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "waited for {what}"
-        );
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-
 // ---- windows ------------------------------------------------------------
 
 thread_local! {
     static DRAWN: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
-    static OPENED: RefCell<Vec<Popout>> = const { RefCell::new(Vec::new()) };
+    static OPENED: RefCell<Vec<(WindowId, String)>> = const { RefCell::new(Vec::new()) };
+    static LAYOUT: RefCell<Option<Signal<Workspace>>> = const { RefCell::new(None) };
     static CLOSED: RefCell<Vec<WindowId>> = const { RefCell::new(Vec::new()) };
     static HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
 }
@@ -68,19 +56,12 @@ thread_local! {
 struct Platform;
 
 impl WindowSystem for Platform {
-    fn open(&self, popout: Popout) {
-        OPENED.with(|o| o.borrow_mut().push(popout));
+    fn open(&self, id: &WindowId, title: &str, _: Option<Rect>) {
+        OPENED.with(|o| o.borrow_mut().push((id.clone(), title.to_owned())));
     }
     fn close(&self, window: &WindowId) {
         CLOSED.with(|c| c.borrow_mut().push(window.clone()));
     }
-    fn origin(&self, _: &WindowId) -> Option<(f32, f32)> {
-        None
-    }
-    fn window_at(&self, _: f32, _: f32) -> Option<WindowId> {
-        None
-    }
-    fn on_release_outside(&self, _: &WindowId, _: Rc<dyn Fn(f32, f32)>) {}
 }
 
 const PANELS: &str = r#"
@@ -148,13 +129,15 @@ impl Extension for Panels {
 }
 
 fn window_app() -> Element {
-    use_context_provider(|| Windows::new(Platform));
+    use_context_provider(|| Windows(Rc::new(Platform)));
     let host = HOST.with(|h| h.borrow().clone().unwrap());
-    let ui = app_shell_extensions::interface::use_extension_ui(
-        host,
-        use_signal(app_shell::Workspace::new),
-    );
-    rsx! { app_shell_extensions::interface::ExtensionOverlays { ui } }
+    let layout = use_signal(Workspace::new);
+    LAYOUT.with(|l| *l.borrow_mut() = Some(layout));
+    let ui = app_shell_extensions::interface::use_extension_ui(host, layout);
+    rsx! {
+        AppShell { layout, kinds: ui.tab_kinds(), tabs: Tabs::On, form: FormFactor::Desktop }
+        app_shell_extensions::interface::ExtensionOverlays { ui }
+    }
 }
 
 /// Lets the window's futures run, then draws.
@@ -200,40 +183,45 @@ fn a_window_opens_as_a_sheet_and_as_an_os_window() {
     assert_eq!(prefs["state"], json!({"tab": "audio"}));
     assert!(ext.host().close_window("lab.panels", "prefs"));
 
-    // An OS window: the platform is asked for one, whose own document
-    // draws the view; the person closing it closes it in the host.
+    // A window: a pane of its view in a window of the layout, which the
+    // shell asks the platform to open; the person closing it (its pane
+    // back in the main window) closes it in the host.
     DRAWN.with(|d| d.borrow_mut().clear());
     run(&list, "LAB_PANELS_MIXER", Value::Null).unwrap();
     settle(&mut main);
-    assert!(
-        DRAWN.with(|d| d.borrow().is_empty()),
-        "not in the main window"
-    );
-    let popout = OPENED
-        .with(|o| o.borrow().first().cloned())
-        .expect("an OS window");
-    assert_eq!(popout.title(), "Mixer");
-    assert_eq!(popout.id().0, "ext-lab.panels-mixer");
-    let mut window = popout.dom();
-    window.rebuild_in_place();
-    assert_eq!(DRAWN.with(|d| d.borrow().clone()), ["mixer"]);
-    window.in_runtime(|| popout.closed());
-    drop(window);
-    assert!(ext.host().open_windows().is_empty());
+    let layout = LAYOUT.with(|l| l.borrow().unwrap());
+    let pane = PaneId::new("ext-window:lab.panels/mixer");
+    let at = main
+        .in_runtime(|| layout.peek().locate(&pane))
+        .expect("its pane");
+    assert_ne!(at.window, 0, "in a window of its own");
+    let opened = OPENED.with(|o| o.borrow().clone());
+    assert_eq!(opened.len(), 1, "{opened:?}");
+    assert_eq!(opened[0].1, "Mixer");
+    let window = opened[0].0.clone();
+    main.in_runtime(|| {
+        let mut layout = layout;
+        layout.write().to_main_window(&pane).unwrap();
+    });
     settle(&mut main);
+    assert!(ext.host().open_windows().is_empty());
+    assert!(main.in_runtime(|| layout.peek().pane(&pane).is_none()));
 
-    // Closed by the host: its OS window closes.
+    // Closed by the host: its pane and its OS window close.
     run(&list, "LAB_PANELS_MIXER", Value::Null).unwrap();
     settle(&mut main);
-    assert_eq!(OPENED.with(|o| o.borrow().len()), 2);
+    assert!(main.in_runtime(|| layout.peek().pane(&pane).is_some()));
+    let second = OPENED.with(|o| o.borrow().last().cloned()).unwrap().0;
+    assert_ne!(second, window, "a window's id is never reused");
     let _ = run(
         &list,
         "EXT_WINDOW_CLOSE",
         json!({"extension": "lab.panels", "id": "mixer"}),
     );
     settle(&mut main);
+    assert!(main.in_runtime(|| layout.peek().pane(&pane).is_none()));
     assert!(
-        CLOSED.with(|c| c.borrow().iter().any(|w| w.0 == "ext-lab.panels-mixer")),
+        CLOSED.with(|c| c.borrow().contains(&second)),
         "its OS window closed"
     );
     // Unloaded: its windows close.

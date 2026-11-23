@@ -342,6 +342,9 @@ pub fn use_extension_ui(host: Host, layout: Signal<Workspace>) -> ExtensionUi {
         layout,
         shell,
     };
+    // Its windows: sheets of the shell's, or windows of the layout.
+    crate::window_ui::use_window_panes(ui);
+    crate::window_ui::set_main(ui);
     // The settings page is the settings extension's window: the app's
     // sections and values to it, `SettingsHandle::show` opening it.
     crate::window_ui::use_settings_window(&host, windows);

@@ -65,3 +65,4 @@ pub use bar::{Slot, use_extension_bar};
 pub use interface::{ExtensionOverlays, ExtensionUi, ExtensionView, use_extension_ui};
 pub use panes::ContextEntry;
 pub use typing_ui::{EditorAction, Typing, TypingBar};
+pub use window_ui::{ExtensionPopout, main_ui};
