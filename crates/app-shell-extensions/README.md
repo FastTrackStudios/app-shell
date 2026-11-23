@@ -9,8 +9,7 @@ The extension runtime is Architect's `architect-extensions` (it draws
 nothing); `architect-extensions-dioxus` is what an extension whose views
 are Dioxus components links. This crate is the chrome around them, moved
 here as it was from `architect-extensions`' `ui`, `page`, `pickers` and
-`remote` features (FastTrackStudios/architect, branch
-`strip/application-framework`): what loaded extensions add to the window,
+`remote` features (FastTrackStudios/architect, #994): what loaded extensions add to the window,
 their windows and sheets, the app's interface for them, process and WASI
 views as remote Blitz documents (`remote`, the default), the extensions
 page (`page`) and the platform's pickers (`pickers`).

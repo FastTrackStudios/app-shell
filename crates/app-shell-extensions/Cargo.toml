@@ -59,12 +59,12 @@ required-features = ["guest"]
 
 [dependencies]
 app-shell = { path = "../app-shell", features = ["icons"] }
-architect = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["action-list"] }
-architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["host", "linked", "dioxus", "uikit"] }
-architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["process"] }
-architect-settings = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
-architect-views = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
-architect-scene = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
+architect = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["action-list"] }
+architect-extensions = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["host", "linked", "dioxus", "uikit"] }
+architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["process"] }
+architect-settings = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede" }
+architect-views = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede" }
+architect-scene = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede" }
 dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41", default-features = false, features = ["lib"] }
 futures = "0.3"
 # COMMANDS_SHOW's arguments, as the Action List reads them.
@@ -87,8 +87,8 @@ rfd = { version = "0.17.2", optional = true }
 [dev-dependencies]
 # The tests spawn themselves as an extension's process (`guest`) and host
 # it (`process`, WASI components).
-architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["host", "guest", "process", "linked", "dioxus", "wasi", "manager"] }
-architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["guest", "paint", "process"] }
+architect-extensions = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["host", "guest", "process", "linked", "dioxus", "wasi", "manager"] }
+architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["guest", "paint", "process"] }
 blitz-dom = { version = "=0.3.0-beta.4", features = ["custom-widget"] }
 blitz-traits = "=0.3.0-beta.4"
 blitz-paint = { version = "=0.3.0-beta.4", features = ["custom-widget"] }

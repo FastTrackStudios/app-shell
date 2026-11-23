@@ -17,18 +17,18 @@ path = "src/main.rs"
 [dependencies]
 # The trait (`linked-core`): linked into an app, a browser's too; off the
 # browser also its process copy (`guest`, vox and tokio).
-architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["linked-core"] }
+architect-extensions = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["linked-core"] }
 serde_json = "1.0"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["guest"] }
-architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["guest"] }
+architect-extensions = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["guest"] }
+architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["guest"] }
 
 [dev-dependencies]
-architect = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["action-list"] }
-architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["host", "linked", "process"] }
-architect-settings = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
-architect-theme = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["actions"] }
+architect = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["action-list"] }
+architect-extensions = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["host", "linked", "process"] }
+architect-settings = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede" }
+architect-theme = { git = "https://github.com/FastTrackStudios/architect", rev = "eaa969f150b4c558b4722c09e7cf619d9fa4bede", features = ["actions"] }
 facet = "=0.50.0-rc.7"
 futures = "0.3"
 tempfile = "3"
