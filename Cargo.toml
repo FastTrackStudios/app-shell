@@ -1,6 +1,10 @@
 [workspace]
 resolver = "3"
 members = ["crates/app-shell", "crates/app-shell-native", "examples/gallery"]
+# Architect's extensions on the shell: a workspace of its own, on the
+# dioxus Architect pins (by git rev), so app-shell itself stays on the
+# published alpha. See crates/app-shell-extensions/README.md.
+exclude = ["crates/app-shell-extensions"]
 
 [workspace.package]
 version = "0.1.0"
