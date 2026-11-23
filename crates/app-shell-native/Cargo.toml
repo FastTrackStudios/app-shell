@@ -33,6 +33,13 @@ blitz-traits = "=0.3.0-beta.4"
 blitz-net = "=0.3.0-beta.4"
 dioxus-asset-resolver = { version = "=0.8.0-alpha.3", features = ["native"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+# Logs and traces (src/telemetry.rs): stderr, and OTLP when a collector is
+# named in the environment.
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+opentelemetry = "0.30"
+opentelemetry_sdk = { version = "0.30", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.30", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls-webpki-roots", "trace"] }
+tracing-opentelemetry = "0.31"
 # Shots (src/shot.rs): the window's document painted again on the CPU, as
 # a PNG. The versions dioxus-native's blitz pins.
 blitz-dom = "=0.3.0-beta.4"
