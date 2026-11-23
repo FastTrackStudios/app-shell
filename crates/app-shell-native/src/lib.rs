@@ -52,6 +52,8 @@ use futures_util::StreamExt;
 #[cfg(target_os = "macos")]
 use dioxus_native::winit::platform::macos::ApplicationHandlerExtMacOS;
 
+pub mod shot;
+
 pub use dioxus_native::winit;
 
 /// How the main window opens.
@@ -63,6 +65,10 @@ pub struct Config {
     /// Whether the system draws the windows' frames. Off (the default):
     /// the shell's title bar is the frame, its buttons the window's.
     pub system_decorations: bool,
+    /// The name of a local control socket to answer on (`shot <path.png>`:
+    /// the app paints its window to a file; [`shot`]). `None`, the
+    /// default: none.
+    pub control: Option<String>,
 }
 
 impl Default for Config {
@@ -71,6 +77,7 @@ impl Default for Config {
             title: "App".to_owned(),
             size: (1280.0, 800.0),
             system_decorations: false,
+            control: None,
         }
     }
 }
@@ -97,6 +104,7 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         decorated: config.system_decorations,
         focus: RefCell::new(Vec::new()),
         sizes: RefCell::new(Vec::new()),
+        shots: Rc::new(RefCell::new(config.control.as_deref().map(shot::serve))),
     });
     let vdom = VirtualDom::new_with_props(
         MainRoot,
@@ -106,6 +114,9 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         },
     );
     let doc = DioxusDocument::new(vdom, document_config());
+    // The main window's document, for shots (`shot`).
+    let live = shot::LiveDocument(doc.inner.clone());
+    doc.vdom.in_scope(ScopeId::ROOT, move || provide_context(live));
     let attributes = frame(
         WindowAttributes::default()
             .with_title(config.title.clone())
@@ -161,6 +172,8 @@ struct Desk {
     focus: RefCell<Vec<(OsId, UnboundedSender<bool>)>>,
     /// Each window's root, told its window's new size (logical points).
     sizes: RefCell<Vec<(OsId, UnboundedSender<Size>)>>,
+    /// Shots asked on the control socket, taken by the main root.
+    shots: Rc<RefCell<Option<futures_channel::mpsc::UnboundedReceiver<shot::Job>>>>,
 }
 
 impl Desk {
@@ -337,6 +350,7 @@ fn MainRoot(props: MainRootProps) -> Element {
         fit_lights(main.as_ref(), seen.decorated);
     });
     use_frame(&desk, &window, Callback::new(move |()| quit.ask(Ask::Quit)));
+    shot::use_shots(desk.shots.clone());
     (props.app)()
 }
 
