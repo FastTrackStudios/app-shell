@@ -14,13 +14,131 @@ publish = false
 [workspace]
 
 [features]
-default = []
+default = ["remote"]
+# Process and WASI views drawn in the window: each a Blitz sub-document of
+# the host's, its scenes composed by the window (`remote`, desk only).
+remote = [
+    "architect-extensions/process",
+    "architect-extensions/scenes",
+    "architect-theme/dioxus",
+    "dep:blitz-dom",
+    "dep:blitz-traits",
+    "dep:cursor-icon",
+    "dep:data-url",
+    "dep:dioxus-native-dom",
+]
+# The extensions page (`page`): search, install with consent, update, pin,
+# grants and logs.
+page = ["architect-extensions/manager", "dep:architect-ui"]
+# The platform's file pickers: the portal on Linux, the system's panels on
+# macOS and Windows (`rfd`), the document and photo pickers on iOS.
+pickers = [
+    "dep:rfd",
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-ui-kit",
+    "dep:objc2-photos-ui",
+    "dep:objc2-uniform-type-identifiers",
+    "dep:block2",
+    "dep:dispatch2",
+]
 
 [dependencies]
 app-shell = { path = "../app-shell" }
-architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["linked-core", "dioxus"] }
-architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
+architect = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["action-list"] }
+architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["host", "linked", "dioxus", "uikit"] }
+architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["process"] }
+architect-settings = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui"] }
+architect-shell = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui"] }
+architect-workspace = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui", "paint-ui"] }
+architect-commands = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui"] }
+architect-theme = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["dioxus"] }
+architect-scene = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
+architect-ui = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", optional = true }
 dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41", default-features = false, features = ["lib"] }
+futures = "0.3"
+semver = "1"
+futures-timer = "3"
+serde_json = "1.0"
+tokio = { version = "1.48", features = ["full"] }
+tracing = { version = "0.1", features = ["std"] }
+web-time = "1"
+anyrender = "0.14"
+peniko = "0.6"
+blitz-dom = { version = "=0.3.0-beta.4", optional = true, features = ["custom-widget"] }
+blitz-traits = { version = "=0.3.0-beta.4", optional = true }
+cursor-icon = { version = "1.2", optional = true }
+data-url = { version = "0.3", optional = true }
+dioxus-native-dom = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41", optional = true }
+rfd = { version = "0.17.2", optional = true }
+
+[dev-dependencies]
+# The tests spawn themselves as an extension's process (`guest`) and host
+# it (`process`, WASI components).
+architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["host", "guest", "process", "linked", "dioxus", "wasi", "manager"] }
+architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["guest", "paint", "process"] }
+blitz-dom = { version = "=0.3.0-beta.4", features = ["custom-widget"] }
+blitz-traits = "=0.3.0-beta.4"
+blitz-paint = { version = "=0.3.0-beta.4", features = ["custom-widget"] }
+anyrender_vello_cpu = "0.18"
+dioxus-native-dom = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41" }
+dioxus-ssr = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41" }
+tempfile = "3"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# `pickers` on iOS (src/pickers_ios.rs): the document picker, the photo
+# picker (out of process: no photo-library permission), on the main
+# thread.
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "block2",
+    "NSArray",
+    "NSData",
+    "NSDate",
+    "NSDictionary",
+    "NSEnumerator",
+    "NSError",
+    "NSSet",
+    "NSSortDescriptor",
+    "NSFileManager",
+    "NSItemProvider",
+    "NSProgress",
+    "NSString",
+    "NSURL",
+    "NSUUID",
+] }
+objc2-ui-kit = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-uniform-type-identifiers",
+    "objc2-core-foundation",
+    "UIApplication",
+    "UIDocumentPickerViewController",
+    "UIImage",
+    "UIImagePickerController",
+    "UIPasteboard",
+    "UINavigationController",
+    "UIResponder",
+    "UIScene",
+    "UISceneDefinitions",
+    "UIView",
+    "UIViewController",
+    "UIWindow",
+    "UIWindowScene",
+] }
+objc2-photos-ui = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "block2",
+    "PHPicker",
+] }
+objc2-uniform-type-identifiers = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "UTCoreTypes",
+    "UTType",
+] }
+block2 = { version = "0.6", optional = true }
+dispatch2 = { version = "0.3", optional = true, default-features = false, features = ["std", "objc2"] }
 
 [patch.crates-io]
 # app-shell names the published alpha; Architect's crates the git rev.
@@ -48,3 +166,4 @@ vox-phon = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.3.0" 
 dioxus-native = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.7.1" }
 dioxus-native-dom = { git = "https://www.github.com/FastTrackStudios/vendor", rev = "25bf4bcdfd0b6acb268ca91a93bc8ff8da683a96" }
 dioxus-vdom = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.7.1" }
+
