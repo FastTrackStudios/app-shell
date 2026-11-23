@@ -581,7 +581,7 @@ fn Detail(browse: Browse, row: Row) -> Element {
     let id = row.id.clone();
     // Its views' frame times (`EXT_VIEWS`'s meters), read again each
     // second while its page is open.
-    let meters = try_use_context::<architect_workspace::Meters>();
+    let meters = try_use_context::<architect_views::Meters>();
     let mut tick = use_signal(|| 0_u64);
     use_future(move || async move {
         loop {

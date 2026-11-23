@@ -9,9 +9,9 @@
 //! interface for them (notify, prompt, menu, clipboard, pickers), process
 //! and WASI views as remote documents, and the extensions page.
 //!
-//! Moved here as it was from `architect-extensions`' `ui` feature; it
-//! still draws with Architect's shell, workspace and commands, and moves
-//! onto app-shell's next.
+//! Moved here from `architect-extensions`' `ui` feature, onto app-shell:
+//! the views are the shell's tab kinds in its panes ([`panes`]), the
+//! chrome its top bar's items and the app's destinations ([`bar`]).
 
 // A linked-in view's root is a fn pointer compared by Dioxus's props: a
 // stale compare only redraws.
@@ -20,9 +20,11 @@
 pub use architect_extensions;
 pub use architect_extensions_dioxus;
 
+pub mod bar;
 pub mod embed_views;
 pub mod host_ui_view;
 pub mod interface;
+pub mod panes;
 pub mod theme_ui;
 pub mod toolbar_editor;
 pub mod toolbar_ui;
@@ -58,3 +60,8 @@ pub fn install() {
 }
 
 pub use embed_views::{BaseViewEmbed, EmbedAsk, EmbedPages, EmbedView, GuestEmbedView, WidgetView};
+
+pub use bar::{Slot, use_extension_bar};
+pub use interface::{ExtensionOverlays, ExtensionUi, ExtensionView, use_extension_ui};
+pub use panes::ContextEntry;
+pub use typing_ui::{EditorAction, Typing, TypingBar};

@@ -128,7 +128,7 @@ struct AppProps {
 #[allow(non_snake_case, clippy::needless_pass_by_value)]
 fn App(props: AppProps) -> Element {
     use_context_provider(|| props.processes.clone());
-    let ui = use_extension_ui(props.host, Arc::new(ActionList::new()));
+    let ui = use_extension_ui(props.host, use_signal(app_shell::Workspace::new));
     use_context_provider(|| ui);
     let start = use_signal(|| 0.0_f64);
     START.with(|s| *s.borrow_mut() = Some(start));

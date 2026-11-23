@@ -8,15 +8,16 @@
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::theme_ui::ChromeTheme;
+use app_shell::ui::{Shell, TabCtx, TabKind};
+use app_shell::{Pane, PaneId, Rect, Side, Target};
 use architect::action::{ActionList, Invocation, InvocationSource};
-use architect_workspace::{ContextEntry, HeaderTools, PaneId, Side, Target, View, try_use_pane_of};
 use dioxus::prelude::*;
 use futures::StreamExt as _;
 use futures::channel::mpsc;
-use serde_json::json;
+
+use crate::panes::ContextEntry;
 
 use crate::interface::{ExtensionUi, ExtensionView};
 use crate::toolbar_editor::{Editor, InsertMenu, Kept, Press, item_name, keep_in};
@@ -32,18 +33,14 @@ fn pane_kind(key: &str) -> String {
     format!("toolbar:{key}")
 }
 
-/// The toolbars that are panes of their own, as workspace views.
-pub(crate) fn pane_views(ui: ExtensionUi) -> Vec<View> {
+/// The toolbars that are panes of their own, as the shell's tab kinds.
+pub(crate) fn pane_kinds(ui: ExtensionUi) -> Vec<TabKind> {
     pane_toolbars(&ui.host())
         .into_iter()
-        .map(|(t, place)| {
+        .map(|(t, _)| {
             let key = t.key.clone();
-            let home = match place {
-                ToolbarPlace::Dock(side) => Target::Dock(dock_side(&side)),
-                _ => Target::Tab,
-            };
             let caption = toolbar_caption(&ui.host(), &t);
-            View::new(pane_kind(&t.key), t.decl.title.clone(), move |_| {
+            TabKind::new(pane_kind(&t.key), t.decl.title.clone(), move |_ctx: TabCtx| {
                 let th = crate::theme_ui::shell_theme();
                 // The strip, then what it is: a pane of buttons alone
                 // read as a view that had not drawn.
@@ -56,8 +53,6 @@ pub(crate) fn pane_views(ui: ExtensionUi) -> Vec<View> {
                     }
                 }
             })
-            .home(home)
-            .headless()
         })
         .collect()
 }
@@ -94,38 +89,35 @@ fn dock_side(side: &str) -> Side {
     }
 }
 
-/// Provides the workspace's [`HeaderTools`]: a pane header's toolbars
-/// (`pane`, `view:<kind>`).
-pub(crate) fn provide_header_tools(ui: ExtensionUi) {
-    use_context_provider(move || {
-        HeaderTools::new(move |kind: &str, pane: &PaneId| {
-            let (_, _) = (ui.revision(), ui.ticks());
-            let host = ui.host();
-            let bars = host.toolbars().in_header_of(host.contributions(), kind);
-            if bars.is_empty() {
-                return None;
+/// A pane header's toolbars (`pane`, `view:<kind>`), drawn above its
+/// content by the shell's `TabHooks`: `None` for none.
+pub(crate) fn header_tools(ui: ExtensionUi, pane: &Pane) -> Option<Element> {
+    let (_, _) = (ui.revision(), ui.ticks());
+    let host = ui.host();
+    let kind = pane.view.0.clone();
+    let bars = host.toolbars().in_header_of(host.contributions(), &kind);
+    if bars.is_empty() {
+        return None;
+    }
+    let pane = pane.id.0.clone();
+    Some(rsx! {
+        for t in bars {
+            ToolbarStrip {
+                key: "{t.key}",
+                ui,
+                toolbar: t.key,
+                pane: pane.clone(),
+                view: kind.clone(),
+                header: true,
             }
-            let (pane, kind) = (pane.0.clone(), kind.to_owned());
-            Some(rsx! {
-                for t in bars {
-                    ToolbarStrip {
-                        key: "{t.key}",
-                        ui,
-                        toolbar: t.key,
-                        pane: pane.clone(),
-                        view: kind.clone(),
-                        header: true,
-                    }
-                }
-            })
-        })
-    });
+        }
+    })
 }
 
 /// Opens each pane toolbar where it goes as it appears (once a window:
 /// one the person closed stays closed until it appears again), and closes
 /// its pane when it goes.
-pub(crate) fn use_pane_toolbars(ui: ExtensionUi, app: Arc<ActionList>) {
+pub(crate) fn use_pane_toolbars(ui: ExtensionUi) {
     let placed = use_hook(|| {
         Rc::new(std::cell::RefCell::new(
             std::collections::BTreeSet::<String>::new(),
@@ -154,11 +146,8 @@ pub(crate) fn use_pane_toolbars(ui: ExtensionUi, app: Arc<ActionList>) {
             .collect();
         for kind in gone {
             placed.borrow_mut().remove(&kind);
-            let args = json!({ "panes": [kind] }).to_string();
-            let app = Arc::clone(&app);
-            spawn(async move {
-                let _ = app.run_json_async("WORKSPACE_CLOSE", args.as_bytes()).await;
-            });
+            let pane = PaneId::new(kind);
+            ui.apply(|w| w.close(&pane));
         }
         for (kind, (title, place)) in now {
             if placed.borrow().contains(&kind) {
@@ -166,33 +155,17 @@ pub(crate) fn use_pane_toolbars(ui: ExtensionUi, app: Arc<ActionList>) {
             }
             placed.borrow_mut().insert(kind.clone());
             let at = match place {
-                ToolbarPlace::Dock(side) => json!({ "dock": { "side": side } }),
-                ToolbarPlace::Window => json!({ "window": {} }),
-                _ => {
-                    json!({ "float": { "rect": { "x": 160.0, "y": 96.0, "w": 360.0, "h": 64.0 } } })
-                }
+                ToolbarPlace::Dock(side) => Target::Dock(dock_side(&side)),
+                ToolbarPlace::Window => Target::Window(None),
+                _ => Target::Float(Rect {
+                    x: 160.0,
+                    y: 96.0,
+                    w: 360.0,
+                    h: 64.0,
+                }),
             };
-            let args = json!({ "view": kind, "id": kind, "title": title, "at": at }).to_string();
-            let app = Arc::clone(&app);
-            let still = Rc::clone(&placed);
-            spawn(async move {
-                // Its view joins the app's views as the app draws again,
-                // and the workspace's actions are there only while a
-                // workspace is on show: until then it waits (while it is
-                // still there).
-                let mut wait = 50_u64;
-                while still.borrow().contains(&kind) {
-                    if app
-                        .run_json_async("WORKSPACE_OPEN", args.as_bytes())
-                        .await
-                        .is_ok()
-                    {
-                        return;
-                    }
-                    futures_timer::Delay::new(std::time::Duration::from_millis(wait)).await;
-                    wait = wait.saturating_mul(2).min(1000);
-                }
-            });
+            let pane = Pane::new(kind.clone(), kind, title);
+            ui.apply(|w| w.open(pane, at));
         }
     });
 }
@@ -377,14 +350,12 @@ impl Ctx {
     }
 
     fn run(&self, action: &str) {
-        if let Some(c) = try_consume_context::<architect_commands::Commands>() {
-            let _ = c.run_invoked(action, None, self.invocation());
-        }
+        crate::panes::run_action(self.ui.host().list(), action, self.invocation());
     }
 
     /// The pane it is in: the header's, or its own.
-    fn pane_id(&self) -> PaneId {
-        PaneId(self.pane.clone().unwrap_or_else(|| pane_kind(&self.key)))
+    fn pane_id(&self) -> String {
+        self.pane.clone().unwrap_or_else(|| pane_kind(&self.key))
     }
 }
 
@@ -419,7 +390,8 @@ pub fn ToolbarStrip(
     let editor = try_use_context::<Editor>();
     // Outside a workspace (over a phone's keyboard) it has no pane, and
     // no context menu of one.
-    let handle = try_use_pane_of(PaneId(pane.clone().unwrap_or_else(|| pane_kind(&toolbar))));
+    let handle = try_use_context::<Shell>();
+    let menu_pane = pane.clone().unwrap_or_else(|| pane_kind(&toolbar));
     let Some(bar) = host.toolbars().get(host.contributions(), &toolbar) else {
         return rsx! {};
     };
@@ -504,8 +476,10 @@ pub fn ToolbarStrip(
             // Its empty space: the `toolbar` target's menu (Edit toolbars,
             // its settings, what extensions add).
             oncontextmenu: move |e: MouseEvent| {
-                if let Some(h) = &handle {
-                    h.context_menu("toolbar", menu_key.clone(), &e);
+                if let Some(shell) = &handle {
+                    e.prevent_default();
+                    let p = e.client_coordinates();
+                    ui.context_menu(shell, "toolbar", &menu_key, &menu_pane, (p.x, p.y));
                 }
             },
             if empty {
@@ -597,7 +571,9 @@ fn EditableItem(
     let Some(editor) = try_use_context::<Editor>() else {
         return rsx! {};
     };
-    let handle = try_use_pane_of(cx.pane_id());
+    let handle = try_use_context::<Shell>();
+    let menu_pane = cx.pane_id();
+    let menu_ui = cx.ui;
     let Ok(at) = At::parse(&path) else {
         return rsx! {};
     };
@@ -680,8 +656,10 @@ fn EditableItem(
             },
             oncontextmenu: move |e: MouseEvent| {
                 e.stop_propagation();
-                if let Some(h) = &handle {
-                    h.context_menu("toolbar-item", menu_id.clone(), &e);
+                if let Some(shell) = &handle {
+                    e.prevent_default();
+                    let p = e.client_coordinates();
+                    menu_ui.context_menu(shell, "toolbar-item", &menu_id, &menu_pane, (p.x, p.y));
                 }
             },
             {inner}

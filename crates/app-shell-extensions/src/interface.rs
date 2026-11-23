@@ -1,19 +1,22 @@
-//! What loaded extensions add, in the app's window (feature `ui`):
+//! What loaded extensions add, in an app-shell window:
 //!
-//! the shell's chrome (tabs, status items, a phone's bar buttons, the slots
-//! they fill), a tab's and a file's context menus, the menu bar, their
-//! toolbars (`crate::toolbar_ui`), their views as workspace views, where
-//! those open (tab, split, dock, float, zoomed, popup, overlay), and a
-//! link's Ctrl- or Cmd-click
-//! (`docs/content/architecture/extensions.md`, "Contributions").
+//! the shell's chrome (`crate::bar`: their tabs as destinations, status
+//! items and bar buttons in the top bar, the slots they fill), a tab's and
+//! a file's context menus, the menu bar's rows, their toolbars
+//! (`crate::toolbar_ui`), their views as the shell's tab kinds
+//! (`crate::panes`), where those open (tab, split, dock, float, zoomed,
+//! popup, overlay), and a link's Ctrl- or Cmd-click
+//! (Architect's `docs/content/architecture/extensions.md`, "Contributions").
 //!
 //! ```ignore
-//! let ui = use_extension_ui(host.clone(), app_list.clone());
-//! chrome.set(ui.chrome()); // over whatever a layout file says
+//! let layout = use_signal(Workspace::new);
+//! let ui = use_extension_ui(host.clone(), layout);
 //! rsx! {
-//!     AppShell { tabs, on_tab: move |id| if !ui.is_tab(id) { … } }
+//!     AppShell { layout, kinds: ui.tab_kinds(), destinations: ui.destinations(), … }
 //!     ExtensionOverlays { ui }
 //! }
+//! // and, in a component under the shell (its top bar):
+//! use_extension_bar(ui);
 //! ```
 //!
 //! An extension's views are mounted by [`ExtensionView`]: the component
@@ -31,16 +34,15 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use app_shell::ui::Shell;
+use app_shell::{Pane, PaneId, Rect, Side, Target, Workspace};
 use architect::action::{ActionList, Invocation, InvocationSource};
-use architect_commands::Live;
-use architect_shell::{
-    BarAction, Chrome, Filler, Slot, StatusItem, StatusSide, Tab, intern, named_icon,
-};
-use architect_workspace::{ContextEntries, ContextEntry, Side, Target, View};
 use dioxus::prelude::*;
 use futures::StreamExt as _;
 use futures::channel::mpsc;
 use serde_json::{Value, json};
+
+use crate::panes::home_target;
 
 use architect_extensions::contrib::{self, Contributions};
 use architect_extensions::host::{Host, Opening, ViewOpen, now_ms};
@@ -110,6 +112,11 @@ pub struct ExtensionUi {
     /// The toolbars that are panes of their own, by kind, with their
     /// title and place: what the views follow (a person's new toolbar).
     pub(crate) toolbar_panes: Signal<Vec<(String, String, String)>>,
+    /// The layout the views open in: the app's, which its `AppShell` draws.
+    pub(crate) layout: Signal<Workspace>,
+    /// The shell of a window drawing that layout, once one has drawn
+    /// (`ExtensionUi::attach`): changes go through it.
+    pub(crate) shell: CopyValue<Option<Shell>>,
 }
 
 impl ExtensionUi {
@@ -138,77 +145,6 @@ impl ExtensionUi {
         (self.windows)()
     }
 
-    /// The shell's chrome as the extensions have it: their tabs, status
-    /// items and bar buttons, and the slots they fill. Put it under a
-    /// layout file's (`Chrome::over`).
-    #[must_use]
-    pub fn chrome(&self) -> Chrome {
-        let _ = (self.revision)();
-        let host = self.host();
-        let reg = host.contributions();
-        let commands = try_consume_context::<architect_commands::Commands>();
-        let mut chrome = Chrome::default();
-        for by in reg.tabs() {
-            let t = &by.item;
-            // By its Lucide name, so any icon the manifest names draws.
-            let mut tab = Tab::named(
-                intern(&format!("{}/{}", by.owner, t.id)),
-                intern(&t.title),
-                intern(&t.icon),
-            );
-            tab.kept = t.kept;
-            chrome.tabs.push(tab);
-        }
-        for by in reg.status(now_ms()) {
-            let s = by.item;
-            let mut item = StatusItem::new(format!("{}/{}", by.owner, s.id), s.text);
-            if !s.icon.is_empty() {
-                item = item.icon(named_icon(&s.icon));
-            }
-            if !s.hint.is_empty() {
-                item = item.hint(s.hint);
-            }
-            if s.side == contrib::StatusSide::Left {
-                item.side = StatusSide::Left;
-            }
-            if !s.action.is_empty()
-                && let Some(c) = commands
-            {
-                let action = s.action.clone();
-                item = item.on_press(move |()| {
-                    let _ = c.run_invoked(&action, None, Invocation::new(InvocationSource::App));
-                });
-            }
-            chrome.status.push(item);
-        }
-        for by in reg.bar() {
-            chrome.bar.push(BarAction::new(
-                by.item.action.clone(),
-                if by.item.title.is_empty() {
-                    by.item.action.clone()
-                } else {
-                    by.item.title.clone()
-                },
-                named_icon(&by.item.icon),
-            ));
-        }
-        for (slot, (owner, view)) in reg.slots() {
-            let Some(slot) = Slot::named(&slot) else {
-                continue;
-            };
-            let me = *self;
-            let kind = format!("{owner}/{view}");
-            let (e, v) = (owner.clone(), view.clone());
-            chrome.fillers.insert(
-                slot,
-                Filler::new(format!("ext:{owner}"), kind, move || {
-                    rsx! { ExtensionView { ui: me, extension: e.clone(), view: v.clone(), fill: false } }
-                }),
-            );
-        }
-        chrome
-    }
-
     /// The extension and tab a contributed tab's id names
     /// (`lab.board/board`), when it is one.
     #[must_use]
@@ -227,58 +163,36 @@ impl ExtensionUi {
         self.tab(id).is_some()
     }
 
-    /// The menu bar's contributed rows for menu `menu` (`MenuBar::contributed`).
+    /// The menu bar's contributed rows for menu `menu`: each an action,
+    /// ticked while a toggle is on.
     #[must_use]
-    pub fn menu_rows(&self, menu: &str) -> Vec<Live> {
+    pub fn menu_rows(&self, menu: &str) -> Vec<crate::panes::ContextEntry> {
         let host = self.host();
         host.contributions()
             .menus(menu)
             .into_iter()
             .filter_map(|by| {
                 let info = host.list().info(&by.item.action)?;
-                let mut row = Live::new(info.display_name, by.item.action);
-                row.checked = info.checked;
-                Some(row)
+                Some(crate::panes::ContextEntry {
+                    label: info.display_name,
+                    command: by.item.action,
+                    checked: info.checked,
+                })
             })
             .collect()
     }
 
-    /// Every loaded extension's views as workspace views, and a
-    /// placeholder for each one seen before that is gone: give them to the
-    /// app's [`architect_workspace::Views`].
+    /// Every view a loaded extension declares, and each one seen before
+    /// that is gone (its panes say so, or close), by the shell's kind
+    /// (`<extension>/<view>`). Reading it subscribes.
     #[must_use]
-    pub fn views(&self) -> Vec<View> {
+    pub(crate) fn view_decls(&self) -> Vec<(String, String, ViewDecl)> {
         let _ = (self.revision)();
         let _ = (self.toolbar_panes)();
-        let me = *self;
-        let host = self.host();
         let mut all = self.seen.peek().clone();
-        all.extend(declared(&host));
-        all.iter()
-            .map(|(kind, (extension, decl))| {
-                let (e, v) = (extension.clone(), decl.id.clone());
-                let mut view = View::new(kind.clone(), decl.title.clone(), move |_| {
-                    rsx! { ExtensionView { ui: me, extension: e.clone(), view: v.clone() } }
-                })
-                .home(home(decl.home))
-                .still()
-                // An extension's view fills its pane: no header row (back,
-                // forward, title, menu), and no tab bar while it is alone
-                // in its group. Its toolbars still get a row of their own.
-                .headless();
-                // A document view has a pane per document (`ViewOpen::pane_id`).
-                if host
-                    .get(extension)
-                    .is_some_and(|l| l.manifest.shows_documents(&decl.id))
-                {
-                    view = view.many();
-                }
-                if !decl.icon.is_empty() {
-                    view = view.icon(named_icon(&decl.icon));
-                }
-                view
-            })
-            .chain(crate::toolbar_ui::pane_views(me))
+        all.extend(declared(&self.host()));
+        all.into_iter()
+            .map(|(kind, (extension, decl))| (kind, extension, decl))
             .collect()
     }
 
@@ -290,7 +204,7 @@ impl ExtensionUi {
         let _ = (self.revision)();
         declared(&self.host())
             .values()
-            .any(|(_, decl)| home(decl.home) == Target::Dock(side))
+            .any(|(_, decl)| home_target(decl.home) == Target::Dock(side))
     }
 
     /// Opens `url` with the extension opener that claims it, as a link's
@@ -366,100 +280,48 @@ pub fn link_press(e: &MouseEvent) -> bool {
     m.ctrl() || m.meta()
 }
 
-const fn home(h: Home) -> Target {
-    match h {
-        Home::Main => Target::Tab,
-        Home::Left => Target::Dock(Side::Left),
-        Home::Right => Target::Dock(Side::Right),
-        Home::Bottom => Target::Dock(Side::Bottom),
-    }
-}
-
-/// Where `open` goes, as `WORKSPACE_OPEN`'s `at`, next to `active`.
-fn at(open: &ViewOpen, near: &Near) -> Value {
-    let active = near.document.as_str();
+/// Where `open` goes in `layout`: its home's dock, a float of its size,
+/// a split beside the document on show, else a tab beside it.
+fn target(open: &ViewOpen) -> Target {
     match (open.home, open.placement) {
-        (Home::Left, _) => json!({ "dock": { "side": "left" } }),
-        (Home::Right, _) => json!({ "dock": { "side": "right" } }),
-        (Home::Bottom, _) => json!({ "dock": { "side": "bottom" } }),
-        (_, ViewPlacement::Float) => json!({ "float": { "rect": {
-            "x": 120.0, "y": 90.0,
-            "w": open.width.unwrap_or(420.0), "h": open.height.unwrap_or(320.0),
-        } } }),
-        (_, ViewPlacement::Split) if !active.is_empty() => {
-            json!({ "split": { "pane": active, "side": "right" } })
+        (Home::Left | Home::Right | Home::Bottom, _) => home_target(open.home),
+        (_, ViewPlacement::Float) => Target::Float(Rect {
+            x: 120.0,
+            y: 90.0,
+            w: open.width.unwrap_or(420.0),
+            h: open.height.unwrap_or(320.0),
+        }),
+        (_, ViewPlacement::Split) => Target::Split(Side::Right),
+        _ => Target::Tab,
+    }
+}
+
+/// Opens `open` in the layout: a pane of its kind, its id
+/// [`ViewOpen::pane_id`] (the kind, or a document's own), so opening the
+/// same thing again brings it forward; zoomed when it says so.
+fn open_in_layout(ui: ExtensionUi, open: &ViewOpen) -> Option<PaneId> {
+    let mut pane = Pane::new(open.pane_id(), open.kind.clone(), open.title.clone());
+    pane.state = open.state.clone().unwrap_or_default();
+    let zoom = open.placement == ViewPlacement::Zoomed;
+    let at = target(open);
+    ui.apply(move |w| {
+        let id = w.open(pane, at)?;
+        if zoom && let Some(group) = w.locate(&id).map(|l| l.group) {
+            w.set_zoomed(group, true)?;
         }
-        _ if !active.is_empty() => json!({ "beside": { "pane": active } }),
-        _ => near.main.map_or_else(
-            || json!({ "float": { "rect": { "x": 120.0, "y": 90.0, "w": 480.0, "h": 360.0 } } }),
-            |group| json!({ "group": { "group": group } }),
-        ),
-    }
-}
-
-/// Where a view of the main area opens: beside the document on show (the
-/// most recent pane in a main area, never a dock's: #442, the Projects page
-/// took the navigator's place when the navigator had the focus), else in
-/// the main window's first group.
-#[derive(Debug, Default)]
-struct Near {
-    document: String,
-    main: Option<u64>,
-}
-
-impl Near {
-    fn of(layout: &Value) -> Self {
-        Self {
-            document: layout
-                .get("current_document")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            main: layout
-                .pointer("/windows/0/groups/0/id")
-                .and_then(Value::as_u64),
-        }
-    }
-}
-
-/// Opens `open` in the workspace through the app's list: a pane of its
-/// kind, its id [`ViewOpen::pane_id`] (the kind, or a document's own), so
-/// opening the same thing again brings it forward; zoomed when it says so.
-async fn open_in_workspace(list: &ActionList, open: &ViewOpen) -> Result<Value, String> {
-    let pane = open.pane_id();
-    let layout = list
-        .run_json_async("WORKSPACE_LAYOUT", b"")
-        .await
-        .map_err(|e| format!("no workspace to open it in: {e}"))?;
-    let layout: Value = serde_json::from_slice(&layout).unwrap_or(Value::Null);
-    let near = Near::of(&layout);
-    let args = json!({
-        "view": open.kind,
-        "id": pane,
-        "state": open.state,
-        "title": open.title,
-        "at": at(open, &near),
-        "focus": true,
-    });
-    let out = list
-        .run_json_async("WORKSPACE_OPEN", args.to_string().as_bytes())
-        .await
-        .map_err(|e| e.to_string())?;
-    if open.placement == ViewPlacement::Zoomed {
-        let zoom = json!({ "pane": pane, "mode": "on" }).to_string();
-        let _ = list.run_json_async("WORKSPACE_ZOOM", zoom.as_bytes()).await;
-    }
-    Ok(serde_json::from_slice(&out).unwrap_or(Value::Null))
+        Ok::<_, app_shell::WorkspaceError>(id)
+    })
 }
 
 /// Puts what `host`'s extensions add into the window: call it in the
-/// app's root component, above the shell. `app` is the app's Action List
-/// (where `WORKSPACE_*` are): views open through it.
+/// app's root component, above the shell. `layout` is the app's layout,
+/// the one its `AppShell` draws: views open in it.
 ///
-/// It provides the workspace's [`ContextEntries`] (an extension's
-/// `[[context]]` rows) and sets the host's view opener; read the rest
-/// from the [`ExtensionUi`] it gives.
-pub fn use_extension_ui(host: Host, app: Arc<ActionList>) -> ExtensionUi {
+/// It provides the shell's [`app_shell::ui::TabHooks`] (each pane's handle
+/// for its view, its header's toolbars, an extension's `[[context]]` rows,
+/// a tab's badges) and sets the host's view opener; read the rest from the
+/// [`ExtensionUi`] it gives.
+pub fn use_extension_ui(host: Host, layout: Signal<Workspace>) -> ExtensionUi {
     dioxus::prelude::use_hook(crate::install);
     let revision = use_contributions(host.contributions());
     let layers = use_signal(Vec::<Layer>::new);
@@ -468,6 +330,7 @@ pub fn use_extension_ui(host: Host, app: Arc<ActionList>) -> ExtensionUi {
     let windows = crate::window_ui::use_open_windows(&host);
     let ticks = crate::toolbar_ui::use_ticks(&host);
     let toolbar_panes = use_signal(Vec::new);
+    let shell = use_hook(|| CopyValue::new(None));
     let ui = ExtensionUi {
         host: held,
         revision,
@@ -476,6 +339,8 @@ pub fn use_extension_ui(host: Host, app: Arc<ActionList>) -> ExtensionUi {
         windows,
         ticks,
         toolbar_panes,
+        layout,
+        shell,
     };
     // The settings page is the settings extension's window: the app's
     // sections and values to it, `SettingsHandle::show` opening it.
@@ -502,44 +367,14 @@ pub fn use_extension_ui(host: Host, app: Arc<ActionList>) -> ExtensionUi {
     // The palette slot's views, the keys extensions bind and their
     // palette sources (#381): ⌘K is the Command Palette extension's.
     use_palette(ui, host.clone(), revision);
-    // A tab's icons and badges (`decorate` on a `tab`): by its view kind
-    // and by its pane.
-    crate::host_ui_view::use_tab_badges(&host);
-    // A tab's and a file's context menus: an extension's rows for them,
-    // a toggle's ticked when on.
-    let reg = host.contributions().clone();
-    let list = host.list().clone();
-    let bars_host = host.clone();
-    use_context_provider(move || {
-        ContextEntries::new(move |target, id| {
-            // The toolbars' own rows first (`toolbar`, `toolbar-item`).
-            let mut rows = crate::toolbar_ui::context_rows(&bars_host, target, id);
-            rows.extend(reg.context(target, id).into_iter().filter_map(|by| {
-                let info = list.info(&by.item.action)?;
-                let label = if by.item.title.is_empty() {
-                    info.display_name
-                } else {
-                    by.item.title.clone()
-                };
-                Some(ContextEntry {
-                    label,
-                    command: by.item.action,
-                    checked: info.checked,
-                })
-            }));
-            rows
-        })
-    });
+    // Around every tab: its pane's handle, its header's toolbars, the
+    // extensions' rows in its menu, what they set on it.
+    use_context_provider(move || ui.tab_hooks());
     // The toolbar editor's state, shared by the window's toolbars.
     let _ = crate::toolbar_editor::provide_editor();
-    // A pane's header: the toolbars on every pane, and on its view's.
-    crate::toolbar_ui::provide_header_tools(ui);
-    // A phone's Typing Toolbar: the focused editor's own items and the
-    // toolbars of place `typing` for where the focus is.
-    crate::typing_ui::provide_typing_tools(ui);
     // A toolbar that is a pane of its own (a dock's, a float, a window)
     // opens where it goes as it appears, and closes as it goes.
-    crate::toolbar_ui::use_pane_toolbars(ui, Arc::clone(&app));
+    crate::toolbar_ui::use_pane_toolbars(ui);
     // Its views open in the window: a pane, or a layer over it.
     let close_host = host.clone();
     let opener = use_hook(move || {
@@ -583,10 +418,8 @@ pub fn use_extension_ui(host: Host, app: Arc<ActionList>) -> ExtensionUi {
         }
     });
     let mut layers_w = layers;
-    let closer = Arc::clone(&app);
     use_future(move || {
         let taken = opener.borrow_mut().take();
-        let app = Arc::clone(&app);
         async move {
             let Some((mut rx, busy)) = taken else { return };
             while let Some(open) = rx.next().await {
@@ -596,8 +429,8 @@ pub fn use_extension_ui(host: Host, app: Arc<ActionList>) -> ExtensionUi {
                         layers_w.write().push(Layer { open });
                     }
                     _ => {
-                        if let Err(why) = open_in_workspace(&app, &open).await {
-                            tracing::warn!(ext.id = %open.extension, ext.view = %open.kind, ext.why = %why, "a view did not open");
+                        if open_in_layout(ui, &open).is_none() {
+                            tracing::warn!(ext.id = %open.extension, ext.view = %open.kind, "a view did not open");
                         }
                     }
                 }
@@ -636,11 +469,8 @@ pub fn use_extension_ui(host: Host, app: Arc<ActionList>) -> ExtensionUi {
             .map(|(k, _)| k)
             .collect();
         for pane in closing {
-            let args = json!({ "panes": [pane] }).to_string();
-            let app = Arc::clone(&closer);
-            spawn(async move {
-                let _ = app.run_json_async("WORKSPACE_CLOSE", args.as_bytes()).await;
-            });
+            let pane = PaneId::new(pane);
+            ui.apply(|w| w.close(&pane));
         }
     });
     ui
@@ -1153,7 +983,7 @@ pub fn ExtensionView(
         .manifest
         .views
         .iter()
-        .find(|v| v.id == view && v.kind == architect_workspace::WEB)
+        .find(|v| v.id == view && v.kind == architect_views::WEB)
     {
         let ask = WebAsk {
             extension: extension.clone(),
@@ -1181,7 +1011,7 @@ pub fn ExtensionView(
         .manifest
         .views
         .iter()
-        .any(|v| v.id == view && v.kind == architect_workspace::PROCESS)
+        .any(|v| v.id == view && v.kind == architect_views::PROCESS)
     {
         let ask = ProcessAsk {
             extension: extension.clone(),

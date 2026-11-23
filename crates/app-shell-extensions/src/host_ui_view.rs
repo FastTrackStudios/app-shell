@@ -16,7 +16,7 @@
 //!
 //! [`Decorations`] draws what extensions set on a row or a tab
 //! (`Host::decorations_of`); a file tree puts one after each row's name.
-//! The workspace's tabs draw theirs through `architect_workspace::TabBadges`,
+//! The shell's tabs draw theirs through `tab_badges` (app-shell's `TabHooks`),
 //! which `use_extension_ui` provides.
 
 use std::collections::VecDeque;
@@ -760,25 +760,20 @@ fn Decorated(from: String, decoration: architect_extensions::hostcall::Decoratio
     }
 }
 
-/// Provides the workspace's tabs their icons and badges: what extensions
-/// set on `Target::tab(<view kind>)` and `Target::tab(<pane id>)`
-/// (`use_extension_ui` calls it).
-pub fn use_tab_badges(host: &Host) {
-    let host = host.clone();
-    let revision = use_decorations(&host);
-    use_context_provider(move || {
-        architect_workspace::TabBadges::new(move |kind, pane| {
-            // Read in the tab's render: it draws again as they change.
-            let _ = revision();
-            let (by_kind, by_pane) = (Target::tab(kind), Target::tab(pane));
-            if host.decorations_of(&by_kind).is_empty() && host.decorations_of(&by_pane).is_empty()
-            {
-                return None;
-            }
-            Some(rsx! {
-                Decorations { host: host.clone(), target: by_kind }
-                Decorations { host: host.clone(), target: by_pane }
-            })
-        })
-    });
+/// A tab's icons and badges: what extensions set on
+/// `Target::tab(<view kind>)` and `Target::tab(<pane id>)`, drawn after its
+/// title by the shell's `TabHooks` (`ExtensionUi::tab_hooks`). Always a
+/// component, so a badge set later draws.
+#[must_use]
+pub fn tab_badges(host: &Host, kind: &str, pane: &str) -> Option<Element> {
+    let (host, kind, pane) = (host.clone(), kind.to_owned(), pane.to_owned());
+    Some(rsx! { TabBadges { host, kind, pane } })
+}
+
+#[component]
+fn TabBadges(host: Host, kind: String, pane: String) -> Element {
+    rsx! {
+        Decorations { host: host.clone(), target: Target::tab(&kind) }
+        Decorations { host, target: Target::tab(&pane) }
+    }
 }

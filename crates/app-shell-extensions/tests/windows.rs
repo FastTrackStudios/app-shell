@@ -150,7 +150,10 @@ impl Extension for Panels {
 fn window_app() -> Element {
     use_context_provider(|| Windows::new(Platform));
     let host = HOST.with(|h| h.borrow().clone().unwrap());
-    let ui = app_shell_extensions::interface::use_extension_ui(host, Arc::new(ActionList::new()));
+    let ui = app_shell_extensions::interface::use_extension_ui(
+        host,
+        use_signal(app_shell::Workspace::new),
+    );
     rsx! { app_shell_extensions::interface::ExtensionOverlays { ui } }
 }
 
@@ -246,15 +249,18 @@ thread_local! {
 
 fn views_app() -> Element {
     let host = HOST.with(|h| h.borrow().clone().unwrap());
-    let ui = app_shell_extensions::interface::use_extension_ui(host, Arc::new(ActionList::new()));
-    let kinds: Vec<String> = ui.views().into_iter().map(|v| v.kind.0).collect();
+    let ui = app_shell_extensions::interface::use_extension_ui(
+        host,
+        use_signal(app_shell::Workspace::new),
+    );
+    let kinds: Vec<String> = ui.tab_kinds().iter().map(|k| k.id.clone()).collect();
     LISTED.with(|l| *l.borrow_mut() = kinds);
     rsx! {}
 }
 
 /// An extension that adds nothing but a view, loaded after the window is
 /// up (a development copy, #844): its view is a pane kind at once,
-/// whatever else the window does, so `WORKSPACE_OPEN` finds it.
+/// whatever else the window does, so the shell draws its panes.
 #[test]
 fn a_view_of_an_extension_loaded_later_is_listed_at_once() {
     let tmp = tempfile::tempdir().unwrap();

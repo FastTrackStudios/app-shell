@@ -145,6 +145,7 @@ dependencies = [
  "architect-shell",
  "architect-theme",
  "architect-ui",
+ "architect-views",
  "architect-workspace",
  "blitz-dom",
  "blitz-paint",

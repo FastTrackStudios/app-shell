@@ -14,7 +14,7 @@
 //!
 //! Each frame is timed from the event that asked for it (a process at
 //! wire 5 answers every event, [`architect_extensions::wire::ANSWERED_WIRE`]) into the
-//! view's `architect_workspace::ViewMeter` (`<extension>/<view>` in the
+//! view's `architect_views::ViewMeter` (`<extension>/<view>` in the
 //! `Meters` in context; `EXT_VIEWS` reads it). While an event goes
 //! unanswered past the budget ([`REMOTE_BUDGET`]) — the process's view
 //! thread is busy with a long handler — the pane keeps its last frame
@@ -57,7 +57,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use architect_workspace::{Meters, ViewMeter};
+use architect_views::{Meters, ViewMeter};
 
 use blitz_dom::{
     BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, EventHandler,
@@ -2256,7 +2256,7 @@ async fn next_frame(
 /// saying why when it is not running.
 ///
 /// Its frames are timed into `<extension>/<view>`'s meter in the
-/// `architect_workspace::Meters` in context (when there are); while one
+/// `architect_views::Meters` in context (when there are); while one
 /// runs past [`REMOTE_BUDGET`] the pane keeps its last frame, marked
 /// busy.
 ///
@@ -2322,7 +2322,7 @@ fn take_view_state(extension: &str, pane: &str) -> Option<String> {
     }
 }
 
-/// [`RemoteView`] in a workspace pane: told the pane's id and state
+/// [`RemoteView`] in a shell pane: told the pane's id and state
 /// (`linked::PANE_CLAIM`), now and whenever the state changes, so a view
 /// opened on a file (an opener's) knows which.
 #[component]
@@ -2333,17 +2333,11 @@ pub fn RemotePaneView(
     #[props(default)] overlay: bool,
     #[props(default)] engine: bool,
 ) -> Element {
-    let pane = architect_workspace::try_use_pane();
+    let pane = try_use_context::<architect_views::PaneHostRef>();
     let now = architect_extensions::linked::pane_input(
-        pane.as_ref().map(|p| p.id.0.as_str()).unwrap_or_default(),
-        &pane
-            .as_ref()
-            .map(architect_workspace::PaneHandle::state)
-            .unwrap_or_default(),
-        &pane
-            .as_ref()
-            .map(architect_workspace::PaneHandle::view_state)
-            .unwrap_or_default(),
+        &pane.as_ref().map(|p| p.0.id().0).unwrap_or_default(),
+        &pane.as_ref().map(|p| p.0.state()).unwrap_or_default(),
+        &pane.as_ref().map(|p| p.0.view_state()).unwrap_or_default(),
     );
     let mut input = use_signal(|| now.clone());
     if *input.peek() != now {
@@ -2359,8 +2353,8 @@ pub fn RemotePaneView(
             let Some(pane) = pane else { return };
             let mut changes = VIEW_STATES.1.subscribe();
             loop {
-                if let Some(state) = take_view_state(&owner, &pane.id.0) {
-                    pane.set_view_state(state);
+                if let Some(state) = take_view_state(&owner, &pane.0.id().0) {
+                    pane.0.set_view_state(state);
                 }
                 if changes.changed().await.is_err() {
                     return;

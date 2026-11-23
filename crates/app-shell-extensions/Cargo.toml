@@ -53,6 +53,7 @@ architect-shell = { git = "https://github.com/FastTrackStudios/architect", branc
 architect-workspace = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui", "paint-ui"] }
 architect-commands = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui"] }
 architect-theme = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["dioxus"] }
+architect-views = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
 architect-scene = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
 architect-ui = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", optional = true }
 dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41", default-features = false, features = ["lib"] }
