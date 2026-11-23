@@ -154,6 +154,7 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         desk,
         popout,
         popouts: HashMap::new(),
+        closed: Vec::new(),
         own,
         own_queue,
     };
@@ -436,6 +437,10 @@ struct App {
     desk: Rc<Desk>,
     popout: fn(WindowId) -> Element,
     popouts: HashMap<OsId, Open>,
+    /// Pop-outs closed, hidden and kept until the app ends: destroying a
+    /// window's Vulkan swapchain while the app runs crashed NVIDIA's
+    /// driver (a null call in `NativeSwapchain`'s drop).
+    closed: Vec<Open>,
     own: BlitzShellProxy,
     own_queue: Receiver<BlitzShellEvent>,
 }
@@ -547,7 +552,8 @@ impl App {
     fn forget(&mut self, os: OsId) {
         if let Some(open) = self.popouts.remove(&os) {
             self.desk.open.borrow_mut().retain(|(w, _)| *w != open.id);
-            drop(open);
+            open.view.window.set_visible(false);
+            self.closed.push(open);
         }
     }
 
