@@ -3,3 +3,11 @@ their operations and repair, the drop geometry and the switcher's model) is
 extracted from Architect's `architect-workspace` crate
 (FastTrackStudios/architect, features/workspace), licensed MIT OR Apache-2.0.
 Its copyright notice is kept in LICENSE-MIT.
+
+The icons in crates/app-shell/src/ui/lucide.rs (feature `icons`) are
+Lucide's (https://lucide.dev, ISC License, copyright Lucide Contributors and,
+for the portions from Feather, Cole Bemis, MIT), read from lucide-dioxus
+(https://github.com/RustForWeb/lucide, MIT License, Copyright (c) 2024 Rust
+for Web) at FastTrackStudios/lucide tag fts-upstream-2026-11 and turned into
+path data by scripts/lucide.py. Their licences' full text is at
+https://lucide.dev/license and in lucide-dioxus's LICENSE.md.

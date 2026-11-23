@@ -666,11 +666,10 @@ pub fn IconOrText(name: String, size: usize, color: String) -> Element {
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
     if named {
-        let icon = architect_shell::named_icon(&name);
-        return icon(architect_shell::Icon {
-            size,
-            color: color.into(),
-        });
+        let icon = app_shell::ui::named_icon(&name);
+        #[allow(clippy::cast_precision_loss, clippy::as_conversions)]
+        let size = size as f32;
+        return rsx! { app_shell::ui::IconView { icon, size, color } };
     }
     rsx! { span { style: "font-size: {size}px; line-height: 1;", "{name}" } }
 }

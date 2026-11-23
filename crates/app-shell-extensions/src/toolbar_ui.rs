@@ -12,7 +12,6 @@ use std::sync::Arc;
 
 use crate::theme_ui::ChromeTheme;
 use architect::action::{ActionList, Invocation, InvocationSource};
-use architect_shell::named_icon;
 use architect_workspace::{ContextEntry, HeaderTools, PaneId, Side, Target, View, try_use_pane_of};
 use dioxus::prelude::*;
 use futures::StreamExt as _;
@@ -883,7 +882,7 @@ fn ToolButton(cx: Ctx, item: ToolItem, path: String, joined: bool) -> Element {
                 if let Some(src) = image {
                     img { src: "{src}", alt: "", style: "width:{glyph}px; height:{glyph}px; object-fit:contain;" }
                 } else if iconic {
-                    {named_icon(&item.icon)(architect_shell::Icon { size: glyph, color: ink.clone().into() })}
+                    app_shell::ui::IconView { icon: app_shell::ui::named_icon(&item.icon), size: glyph as f32, color: ink.to_string() }
                 }
                 if show_label {
                     span { "{label}" }

@@ -10,6 +10,10 @@ repository.workspace = true
 default = ["ui"]
 # The Dioxus components. Without it: the model only (no Dioxus at all).
 ui = ["dep:dioxus", "dep:futures-channel", "dep:futures-util", "dep:futures-timer", "dep:tracing"]
+# Every Lucide icon by its name (`ui::named_icon`), as path data generated
+# by scripts/lucide.py: a big table, so off unless an app draws icons named
+# by data (a manifest, a layout file).
+icons = ["ui"]
 
 [dependencies]
 dioxus = { workspace = true, optional = true, features = ["macro", "html", "signals", "hooks", "document"] }

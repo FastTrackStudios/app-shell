@@ -44,7 +44,7 @@ pickers = [
 ]
 
 [dependencies]
-app-shell = { path = "../app-shell" }
+app-shell = { path = "../app-shell", features = ["icons"] }
 architect = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["action-list"] }
 architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["host", "linked", "dioxus", "uikit"] }
 architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["process"] }

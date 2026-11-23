@@ -12,6 +12,8 @@ mod chrome;
 mod foot;
 pub mod icons;
 mod kinds;
+#[cfg(feature = "icons")]
+mod lucide;
 mod overlay;
 mod popup;
 mod shell;
@@ -33,7 +35,7 @@ pub use chrome::{
     ToolbarButton, ToolbarGroup, TopBar, WindowLights,
 };
 pub use foot::{Destination, PrimaryAction};
-pub use icons::{Icon, IconView};
+pub use icons::{Icon, IconView, PUZZLE, named, named_icon};
 pub use kinds::{Render, TabCtx, TabKind, TabKinds};
 pub use overlay::{
     PaletteItem, Sheet, SheetContent, SheetHandle, SheetId, SheetSpec, Swipeable, ToastSpec,
