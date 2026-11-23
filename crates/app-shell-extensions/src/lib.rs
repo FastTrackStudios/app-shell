@@ -91,6 +91,29 @@ pub(crate) fn use_processes() -> Option<architect_extensions::process::Processes
         .or_else(|| PROCESSES.get().cloned())
 }
 
+/// How the views the window does not draw itself keep up (a process's
+/// view, timed from the event that asked for each frame): the meters a
+/// remote view records into when no `Meters` is in context, and that
+/// [`install_view_actions`] reads.
+#[must_use]
+pub fn meters() -> architect_views::Meters {
+    METERS.get_or_init(architect_views::Meters::new).clone()
+}
+
+static METERS: std::sync::OnceLock<architect_views::Meters> = std::sync::OnceLock::new();
+
+/// Puts `EXT_VIEWS` on `list` (each measured view's frames' p50, p99 and
+/// slowest against its budget), reading [`meters`].
+///
+/// # Errors
+///
+/// Its id is taken.
+pub fn install_view_actions(
+    list: &architect::action::ActionList,
+) -> Result<(), architect::action::ActionError> {
+    architect_extensions::views::install_view_actions(list, meters())
+}
+
 pub use embed_views::{BaseViewEmbed, EmbedAsk, EmbedPages, EmbedView, GuestEmbedView, WidgetView};
 
 pub use bar::{Slot, use_extension_bar};

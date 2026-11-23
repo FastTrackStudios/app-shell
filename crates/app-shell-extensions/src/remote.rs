@@ -2500,14 +2500,10 @@ fn Mount(
 ) -> Element {
     let shown = use_signal(|| Shown::Waiting("Starting…".to_owned()));
     let busy = use_signal(|| false);
-    let meters = try_use_context::<Meters>();
-    let meter = use_hook(|| {
-        let name = format!("{extension}/{view}");
-        meters.map_or_else(
-            || ViewMeter::new(&name, REMOTE_BUDGET),
-            |m| m.meter(&name, REMOTE_BUDGET),
-        )
-    });
+    // The app's meters in context, else the window's (`crate::meters`,
+    // `EXT_VIEWS`).
+    let meters = try_use_context::<Meters>().unwrap_or_else(crate::meters);
+    let meter = use_hook(|| meters.meter(&format!("{extension}/{view}"), REMOTE_BUDGET));
     {
         // Unmounted mid-frame: no longer busy.
         let meter = meter.clone();
