@@ -5,14 +5,15 @@
 //! reads its pane (id, state, view state) through the `PaneHostRef` the
 //! shell's `TabHooks` put around it; the view's own `ViewState::set` is
 //! kept on the pane. The extension's tabs, status items and slots reach
-//! the shell's chrome as destinations and bar items.
+//! the shell's chrome as destinations and bar items, its palette source
+//! the shell's palette rows.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::cell::RefCell;
 use std::time::Duration;
 
-use app_shell::ui::{AppShell, FormFactor, Tabs};
+use app_shell::ui::{AppShell, FormFactor, PaletteSources, Tabs};
 use app_shell::{PaneId, Workspace};
 use app_shell_extensions::{ExtensionUi, use_extension_ui};
 use architect::action::{ActionList, Invocation, InvocationSource};
@@ -49,6 +50,22 @@ view = "editor"
 [[status]]
 id = "words"
 text = "42 words"
+
+[[actions]]
+id = "LAB_NOTES_FIND"
+name = "Find notes"
+params = '{"type":"object","properties":{"query":{"type":"string"}}}'
+
+[[actions]]
+id = "LAB_NOTES_GO"
+name = "Go to a note"
+params = '{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}'
+
+[[palette_sources]]
+id = "notes"
+title = "Notes"
+action = "LAB_NOTES_FIND"
+run = "LAB_NOTES_GO"
 "#;
 
 /// The view: what its pane says, and its view state kept on first draw.
@@ -74,7 +91,20 @@ impl Extension for Notes {
     }
 
     fn build(&self, ext: &mut Builder) {
-        ext.view("editor", Editor);
+        ext.view("editor", Editor)
+            .action("LAB_NOTES_FIND", |_| async {
+                Ok(serde_json::json!({ "items": [
+                    { "id": "n1", "label": "Plan the week" },
+                    { "id": "n2", "label": "Groceries" },
+                ] }))
+            })
+            .action("LAB_NOTES_GO", |args| async move {
+                WENT.with(|w| {
+                    w.borrow_mut()
+                        .push(args["id"].as_str().unwrap_or_default().to_owned())
+                });
+                Ok(serde_json::Value::Null)
+            });
     }
 }
 
@@ -82,6 +112,8 @@ thread_local! {
     static HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
     static UI: RefCell<Option<ExtensionUi>> = const { RefCell::new(None) };
     static LAYOUT: RefCell<Option<Signal<Workspace>>> = const { RefCell::new(None) };
+    static SOURCES: RefCell<Option<PaletteSources>> = const { RefCell::new(None) };
+    static WENT: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 fn app() -> Element {
@@ -90,6 +122,8 @@ fn app() -> Element {
     let ui = use_extension_ui(host, layout);
     UI.with(|u| *u.borrow_mut() = Some(ui));
     LAYOUT.with(|l| *l.borrow_mut() = Some(layout));
+    let sources = use_context::<PaletteSources>();
+    SOURCES.with(|s| *s.borrow_mut() = Some(sources));
     rsx! {
         AppShell {
             layout,
@@ -182,4 +216,33 @@ fn an_extensions_view_opens_in_a_pane_and_reads_its_pane() {
     settle(&mut dom);
     let panes = dom.in_runtime(|| layout.peek().panes.len());
     assert_eq!(panes, 1);
+}
+
+#[test]
+fn an_extensions_palette_source_gives_the_palettes_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let list = ActionList::new();
+    let host = Host::new(list.clone(), SharedSections::new(Registry::new()));
+    let ext = Extensions::new(host, Installs::new(tmp.path().join("i")))
+        .with_linked(&Notes)
+        .unwrap();
+    let _ = ext.sync();
+    HOST.with(|h| *h.borrow_mut() = Some(ext.host().clone()));
+    let mut dom = VirtualDom::new(app);
+    dom.rebuild_in_place();
+    settle(&mut dom);
+    let sources = SOURCES.with(|s| s.borrow().clone()).unwrap();
+    // A linked action may answer later: the palette is told to ask again.
+    let _ = dom.in_scope(ScopeId::ROOT, || sources.search("plan"));
+    settle(&mut dom);
+    let rows = dom.in_scope(ScopeId::ROOT, || sources.search("plan"));
+    let first = rows.first().expect("a row").item.clone();
+    assert_eq!(
+        (first.id.as_str(), first.label.as_str()),
+        ("n1", "Plan the week")
+    );
+    assert_eq!(first.source, "notes");
+    dom.in_scope(ScopeId::ROOT, || sources.run(&first));
+    settle(&mut dom);
+    assert_eq!(WENT.with(|w| w.borrow().clone()), ["n1"]);
 }

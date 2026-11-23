@@ -137,7 +137,6 @@ dependencies = [
  "anyrender_vello_cpu",
  "app-shell",
  "architect",
- "architect-commands",
  "architect-extensions",
  "architect-extensions-dioxus",
  "architect-scene",

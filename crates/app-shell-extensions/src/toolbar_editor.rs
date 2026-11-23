@@ -8,7 +8,7 @@
 //! a whole group, into another toolbar on show; Escape, or a drop off any
 //! toolbar, leaves it where it was), and a right-click shows the
 //! `toolbar-item` context menu (its own rows and extensions'). An action
-//! is found by the palette's own search (`architect_commands::rank`), a
+//! is found by the palette's own search (`app_shell::palette::rank`), a
 //! widget by its extension, with a live preview.
 //!
 //! [`ToolbarEditorLayer`] draws all of it over the window (`ExtensionOverlays`
@@ -20,7 +20,7 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use architect_commands::{Command, Recents, rank};
+use app_shell::palette::{Item as Command, Recents, rank};
 use dioxus::prelude::*;
 use serde_json::{Value, json};
 
@@ -879,14 +879,8 @@ fn choose_action(editor: Editor, host: &Host, purpose: &For, id: &str) {
     }
 }
 
-/// The actions to pick from: the palette's, else the host's list.
+/// The actions to pick from: the host's list.
 fn commands(host: &Host) -> Vec<Command> {
-    if let Some(c) = try_consume_context::<architect_commands::Commands>() {
-        let all = c.all();
-        if !all.is_empty() {
-            return all;
-        }
-    }
     host.list()
         .infos()
         .into_iter()

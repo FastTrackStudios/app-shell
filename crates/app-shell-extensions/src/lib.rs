@@ -24,6 +24,7 @@ pub mod bar;
 pub mod embed_views;
 pub mod host_ui_view;
 pub mod interface;
+pub mod palette;
 pub mod panes;
 pub mod theme_ui;
 pub mod toolbar_editor;
