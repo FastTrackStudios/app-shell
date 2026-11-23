@@ -234,8 +234,16 @@ impl KeyChord {
     /// Parse `"Mod+Shift+T"`: modifiers `Ctrl`, `Shift`, `Alt`, `Meta`
     /// (`Cmd`), and `Mod`, the platform's primary one (`Cmd` on a Mac,
     /// `Ctrl` elsewhere: `mac` says which).
+    ///
+    /// Also the form menus show (`⌘K`, `⇧⌘P`, `⌃O`, `⌥←`, `A`): `⌘` is
+    /// the primary modifier, `⌃` Ctrl, `⇧` Shift, `⌥` Alt, then the key
+    /// (`←` `→` `↑` `↓`, `↵`, `⌫`, `Esc`, `Space` name theirs).
     #[must_use]
     pub fn parse(text: &str, mac: bool) -> Option<Self> {
+        if text.contains(['⌘', '⌃', '⇧', '⌥']) || (!text.contains('+') && text.chars().count() > 1)
+        {
+            return Self::parse_glyphs(text, mac);
+        }
         let mut chord = Self::default();
         let mut parts: Vec<&str> = text.split('+').collect();
         // `Mod++` names the plus key.
@@ -260,6 +268,44 @@ impl KeyChord {
         }
         chord.key = normal_key(key);
         Some(chord)
+    }
+
+    /// `⇧⌘P`: modifier glyphs, then the key.
+    fn parse_glyphs(text: &str, mac: bool) -> Option<Self> {
+        let mut chord = Self::default();
+        let mut rest = text;
+        while let Some(c) = rest.chars().next() {
+            match c {
+                '⌘' if mac => chord.meta = true,
+                '⌘' => chord.ctrl = true,
+                '⌃' => chord.ctrl = true,
+                '⇧' => chord.shift = true,
+                '⌥' => chord.alt = true,
+                _ => break,
+            }
+            rest = &rest[c.len_utf8()..];
+        }
+        let key = match rest {
+            "" => return None,
+            "←" => "ArrowLeft",
+            "→" => "ArrowRight",
+            "↑" => "ArrowUp",
+            "↓" => "ArrowDown",
+            "↵" | "Return" => "Enter",
+            "⌫" => "Backspace",
+            "Esc" => "Escape",
+            "Space" => " ",
+            k => k,
+        };
+        chord.key = normal_key(key);
+        Some(chord)
+    }
+
+    /// Whether neither Ctrl nor Cmd is held: a key a text field would
+    /// type (a letter, Shift+letter, an arrow).
+    #[must_use]
+    pub const fn is_plain(&self) -> bool {
+        !self.ctrl && !self.meta
     }
 
     /// Whether the platform's primary modifier is held alone (or with

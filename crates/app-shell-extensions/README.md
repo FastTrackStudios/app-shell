@@ -20,7 +20,9 @@ in the shell's panes; app-shell's `TabHooks` put each pane's
 `architect_views::PaneHostRef` around its content (what a view's
 `use_pane_state` and `use_view_state` read), the pane header's toolbars
 above it, the extensions' context rows in a tab's menu and their badges
-after its title. Their tabs are the app's destinations, their status items
+after its title. Their keys (`[[keys]]`, and ⌘Z / ⇧⌘Z as `DOC_UNDO` /
+`DOC_REDO` in a view an opener shows a file in) are the shell's bound keys
+(`keys`). Their tabs are the app's destinations, their status items
 and bar buttons the top bar's items and the `title` and `tabs` slots its
 fillers (`use_extension_bar`). The phone's Typing Toolbar is `TypingBar`,
 which the app places over the keyboard. `tests/panes.rs` is the whole

@@ -244,6 +244,13 @@ impl ExtensionUi {
         }
     }
 
+    /// The shell attached ([`Self::attach`]), if any: reading it
+    /// subscribes, so an effect runs again once one is.
+    #[must_use]
+    pub fn attached(&self) -> Option<Shell> {
+        (self.shell)()
+    }
+
     /// Changes the layout with `op`: through the shell when one is
     /// attached, else on the layout signal itself.
     pub fn apply<T>(

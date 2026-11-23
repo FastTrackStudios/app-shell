@@ -116,7 +116,7 @@ pub struct ExtensionUi {
     pub(crate) layout: Signal<Workspace>,
     /// The shell of a window drawing that layout, once one has drawn
     /// (`ExtensionUi::attach`): changes go through it.
-    pub(crate) shell: CopyValue<Option<Shell>>,
+    pub(crate) shell: Signal<Option<Shell>>,
 }
 
 impl ExtensionUi {
@@ -330,7 +330,7 @@ pub fn use_extension_ui(host: Host, layout: Signal<Workspace>) -> ExtensionUi {
     let windows = crate::window_ui::use_open_windows(&host);
     let ticks = crate::toolbar_ui::use_ticks(&host);
     let toolbar_panes = use_signal(Vec::new);
-    let shell = use_hook(|| CopyValue::new(None));
+    let shell = use_signal(|| None);
     let ui = ExtensionUi {
         host: held,
         revision,
@@ -373,6 +373,8 @@ pub fn use_extension_ui(host: Host, layout: Signal<Workspace>) -> ExtensionUi {
     // Around every tab: its pane's handle, its header's toolbars, the
     // extensions' rows in its menu, what they set on it.
     use_context_provider(move || ui.tab_hooks());
+    // Their keys (`[[keys]]`) in the shell's keymap, once it is attached.
+    crate::keys::use_keys(ui);
     // The toolbar editor's state, shared by the window's toolbars.
     let _ = crate::toolbar_editor::provide_editor();
     // A toolbar that is a pane of its own (a dock's, a float, a window)

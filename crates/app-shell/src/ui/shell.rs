@@ -93,6 +93,54 @@ impl Default for KeymapHandle {
     }
 }
 
+/// Where a [`BoundKey`] holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyScope {
+    /// Everywhere in the window, after the [`Keymap`]'s commands.
+    Window,
+    /// While the active tab is of this kind, before the [`Keymap`]: a
+    /// view's own keys (⌘Z in a chart, plain letters for note input).
+    Kind(String),
+}
+
+/// What a [`BoundKey`] does, told the active tab; whether it took the key.
+pub type KeyRun = Rc<dyn Fn(Option<&Pane>) -> bool>;
+
+/// A key bound to something the app does itself (an extension's action),
+/// not a layout [`Command`]: [`Shell::bind_keys`].
+#[derive(Clone)]
+pub struct BoundKey {
+    pub chord: KeyChord,
+    pub scope: KeyScope,
+    /// Does it, told the active tab: false when it did not take the key
+    /// (a plain letter typed into a text field), which then goes on.
+    pub run: KeyRun,
+}
+
+impl BoundKey {
+    /// `chord` in `scope`, running `run`.
+    pub fn new(
+        chord: KeyChord,
+        scope: KeyScope,
+        run: impl Fn(Option<&Pane>) -> bool + 'static,
+    ) -> Self {
+        Self {
+            chord,
+            scope,
+            run: Rc::new(run),
+        }
+    }
+}
+
+impl std::fmt::Debug for BoundKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BoundKey")
+            .field("chord", &self.chord)
+            .field("scope", &self.scope)
+            .finish_non_exhaustive()
+    }
+}
+
 /// A pointer gesture under way.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Gesture {
@@ -183,6 +231,9 @@ struct Hooks {
     hub: Option<LayoutHub>,
 }
 
+/// The keys bound with [`Shell::bind_keys`], by who bound them.
+type Bound = Vec<(String, Vec<BoundKey>)>;
+
 /// The shell of one window, in context for everything under
 /// [`AppShell`]: the layout, and what a component inside does to it.
 #[derive(Clone, Copy, PartialEq)]
@@ -235,6 +286,8 @@ pub struct Shell {
     /// The toasts waiting, the first on show.
     pub(crate) toasts: Signal<Vec<ToastEntry>>,
     next_id: CopyValue<u64>,
+    /// Keys the app binds past its keymap ([`Shell::bind_keys`]).
+    bound: CopyValue<Bound>,
     /// The window's size, points (0 until measured).
     pub(crate) viewport: Signal<(f64, f64)>,
     hooks: CopyValue<Hooks>,
@@ -695,6 +748,53 @@ impl Shell {
         matches!(&*self.gesture.peek(), Some(Gesture::Tab { live: true, .. }))
     }
 
+    /// What the keys `owner` binds are from now on (none: it binds none),
+    /// past the app's [`Keymap`]: a tab kind's before it, the window's
+    /// after it. Between owners, the first to bind a chord wins it.
+    pub fn bind_keys(&self, owner: &str, keys: Vec<BoundKey>) {
+        let mut bound = self.bound;
+        let mut all = bound.write();
+        if keys.is_empty() {
+            all.retain(|(o, _)| o != owner);
+        } else if let Some(at) = all.iter_mut().find(|(o, _)| o == owner) {
+            at.1 = keys;
+        } else {
+            all.push((owner.to_owned(), keys));
+        }
+    }
+
+    /// Does what `chord` asks in this window, as a key pressed in it:
+    /// the active tab's kind's bound keys, then the [`Keymap`]'s command,
+    /// then the window's bound keys. Whether something took it.
+    pub fn press_key(&self, chord: &KeyChord) -> bool {
+        let active = {
+            let layout = self.layout.peek();
+            layout.active.as_ref().and_then(|a| layout.pane(a)).cloned()
+        };
+        let bound: Vec<BoundKey> = self
+            .bound
+            .peek()
+            .iter()
+            .flat_map(|(_, keys)| keys.iter().filter(|k| k.chord == *chord).cloned())
+            .collect();
+        let kind = active.as_ref().map(|p| p.view.0.as_str());
+        let in_kind = bound
+            .iter()
+            .filter(|k| matches!(&k.scope, KeyScope::Kind(v) if Some(v.as_str()) == kind));
+        for k in in_kind {
+            if (k.run)(active.as_ref()) {
+                return true;
+            }
+        }
+        if self.key(chord) {
+            return true;
+        }
+        bound
+            .iter()
+            .filter(|k| k.scope == KeyScope::Window)
+            .any(|k| (k.run)(active.as_ref()))
+    }
+
     fn key(&self, chord: &KeyChord) -> bool {
         let keymap = self.hooks.peek().keymap.clone();
         let tabs = self.tabs_shown();
@@ -1105,6 +1205,7 @@ pub fn AppShell(
         sheets: Signal::new(Vec::new()),
         toasts: Signal::new(Vec::new()),
         next_id: CopyValue::new(1),
+        bound: CopyValue::new(Vec::new()),
         viewport: Signal::new((0.0, 0.0)),
         hooks,
     });
@@ -1261,7 +1362,7 @@ pub fn AppShell(
                 }
             },
             onkeydown: move |event| {
-                if shell.key(&chord_of(&event)) {
+                if shell.press_key(&chord_of(&event)) {
                     event.prevent_default();
                     event.stop_propagation();
                 }

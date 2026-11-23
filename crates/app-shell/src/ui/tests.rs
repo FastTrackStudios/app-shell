@@ -553,3 +553,46 @@ fn a_panes_view_state_is_kept_without_history() {
             .is_err()
     );
 }
+
+#[test]
+fn bound_keys_hold_in_their_tabs_kind_before_the_keymap_and_the_windows_after() {
+    use super::{BoundKey, KeyScope};
+    use crate::commands::KeyChord;
+    use std::rc::Rc;
+    let heard: Rc<RefCell<Vec<String>>> = Rc::default();
+    let h = Rc::clone(&heard);
+    let (after, _) = run(tabs(&["a", "b"]), move |shell| {
+        let key = |text: &str| KeyChord::parse(text, false).unwrap();
+        let said = |what: &'static str, h: &Rc<RefCell<Vec<String>>>| {
+            let h = Rc::clone(h);
+            move |pane: Option<&Pane>| {
+                let id = pane.map(|p| p.id.0.clone()).unwrap_or_default();
+                h.borrow_mut().push(format!("{what} {id}"));
+                true
+            }
+        };
+        shell.bind_keys(
+            "ext",
+            vec![
+                // The active tab's kind's ⌘W wins over the keymap's.
+                BoundKey::new(key("⌘W"), KeyScope::Kind("v".into()), said("undo", &h)),
+                // Another kind's keys do not hold here.
+                BoundKey::new(key("⌘K"), KeyScope::Kind("other".into()), said("never", &h)),
+                // The window's come after the keymap: ⇧⌘T is its.
+                BoundKey::new(key("⇧⌘T"), KeyScope::Window, said("never", &h)),
+                BoundKey::new(key("⌘J"), KeyScope::Window, said("window", &h)),
+                // One that does not take the key lets it go on.
+                BoundKey::new(key("A"), KeyScope::Kind("v".into()), |_| false),
+            ],
+        );
+        assert!(shell.press_key(&key("⌘W")));
+        assert!(shell.press_key(&key("⌘J")));
+        assert!(!shell.press_key(&key("A")));
+        shell.press_key(&key("⌘K"));
+        shell.bind_keys("ext", Vec::new());
+        assert!(!shell.press_key(&key("⌘J")));
+    });
+    assert_eq!(*heard.borrow(), ["undo a", "window a"]);
+    // ⌘W was the binding's: no tab closed.
+    assert!(after.pane(&PaneId::new("a")).is_some());
+}

@@ -25,6 +25,7 @@ pub mod embed_views;
 pub mod field_focus;
 pub mod host_ui_view;
 pub mod interface;
+pub mod keys;
 pub mod palette;
 pub mod panes;
 pub mod settings;
