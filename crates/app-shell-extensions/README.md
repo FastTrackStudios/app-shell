@@ -47,6 +47,14 @@ every extension contribute to `settings.sections`, drawn by
 its view, `SectionViews`). Link it in (`Extensions::with_linked`), or run
 it as a process: `app-shell-settings`, feature `guest`.
 
+## The built-in extensions moved from Architect
+
+Members of this crate's workspace (one lockfile, one target, the same
+patches): `theme-picker` (`app-shell-theme-picker`, id `theme.picker`:
+⌘K's "Choose a theme…" and "Light or dark", ⌘O's `theme:`; it reaches
+the theme store only through the host service, so it needs no UI of its
+own), linked in or run as its process.
+
 ## Why a workspace of its own
 
 Architect pins dioxus by git rev (`430cfb56`); app-shell is on the
@@ -57,7 +65,7 @@ users) and crates.io's `dioxus` handed the same git rev, as Studio does.
 app-shell itself stays on the published alpha.
 
 ```bash
-cd crates/app-shell-extensions && cargo check --all-features && cargo nextest run
+cd crates/app-shell-extensions && cargo check --workspace --all-features && cargo nextest run --workspace --all-features
 ```
 
 ## What it still takes from Architect

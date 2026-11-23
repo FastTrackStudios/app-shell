@@ -171,6 +171,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "app-shell-theme-picker"
+version = "0.1.0"
+dependencies = [
+ "architect",
+ "architect-extensions",
+ "architect-extensions-dioxus",
+ "architect-settings",
+ "architect-theme",
+ "facet",
+ "futures",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "app_units"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -498,6 +513,7 @@ name = "architect-theme"
 version = "0.1.0"
 source = "git+https://github.com/FastTrackStudios/architect?branch=strip%2Fapplication-framework#547f7be85ff4c2cc04a9870d03c2a1e505ed3585"
 dependencies = [
+ "architect",
  "dioxus",
  "facet",
  "facet-json",

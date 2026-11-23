@@ -10,8 +10,11 @@ publish = false
 # A workspace of its own: Architect pins dioxus by git rev, and every crate
 # it links must build against that one dioxus. Its patches are Architect's
 # own (a git dependency's [patch] tables do not reach its users), plus the
-# published dioxus app-shell names, handed the same git rev.
+# published dioxus app-shell names, handed the same git rev. The built-in
+# extensions moved here from Architect are its members: one lockfile, one
+# target, the same patches.
 [workspace]
+members = [".", "theme-picker"]
 
 [features]
 default = ["remote"]
