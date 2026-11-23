@@ -132,11 +132,20 @@ impl TabKinds {
 /// - `badge` draws after a tab's title (an icon, a count).
 #[derive(Clone, Default)]
 pub struct TabHooks {
-    pub around: Option<Rc<dyn Fn(&TabCtx)>>,
-    pub header: Option<Rc<dyn Fn(&TabCtx) -> Option<Element>>>,
-    pub menu: Option<Rc<dyn Fn(&Pane) -> Vec<super::popup::MenuItem>>>,
-    pub badge: Option<Rc<dyn Fn(&Pane) -> Option<Element>>>,
+    pub around: Option<Around>,
+    pub header: Option<Header>,
+    pub menu: Option<TabMenu>,
+    pub badge: Option<Badge>,
 }
+
+/// [`TabHooks::around`]: called in a tab's content component.
+pub type Around = Rc<dyn Fn(&TabCtx)>;
+/// [`TabHooks::header`]: a row above a tab's content, or none.
+pub type Header = Rc<dyn Fn(&TabCtx) -> Option<Element>>;
+/// [`TabHooks::menu`]: rows for a tab's context menu.
+pub type TabMenu = Rc<dyn Fn(&Pane) -> Vec<super::popup::MenuItem>>;
+/// [`TabHooks::badge`]: drawn after a tab's title, or nothing.
+pub type Badge = Rc<dyn Fn(&Pane) -> Option<Element>>;
 
 impl TabHooks {
     #[must_use]

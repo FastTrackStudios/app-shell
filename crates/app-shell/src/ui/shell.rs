@@ -482,6 +482,19 @@ impl Shell {
         });
     }
 
+    /// Open open-anything (⌘O): what the openers in the
+    /// [`super::PaletteSources`] in context find.
+    pub fn open_quick_open(&self) {
+        self.close_popup();
+        self.open_sheet(SheetSpec {
+            title: None,
+            detent: Detent::Large,
+            detents: vec![Detent::Large],
+            content: SheetContent::QuickOpen,
+            on_close: None,
+        });
+    }
+
     /// Close what floats over the page for a navigation: the popup, the
     /// drawer, the switcher.
     pub fn close_overlays(&self) {

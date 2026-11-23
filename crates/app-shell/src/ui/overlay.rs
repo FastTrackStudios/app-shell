@@ -17,7 +17,7 @@ use super::foot::{bottom_pad, top_pad};
 use super::icons::{self, Icon, IconView};
 use super::popup::{MenuAction, MenuItem};
 use super::shell::{FormFactor, Gesture, Shell, use_shell};
-use crate::gestures::{Detent, Swipe, palette_order, swipe_of};
+use crate::gestures::{Detent, Swipe, swipe_of};
 
 /// A sheet's id, to close it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -30,8 +30,12 @@ pub enum SheetContent {
     Custom(Callback<(), Element>),
     /// A menu: an action sheet on a phone.
     Menu(Vec<MenuItem>),
-    /// The command palette.
+    /// The command palette: the app's entries, then what the
+    /// [`super::PaletteSources`] in context give.
     Palette(Vec<PaletteItem>),
+    /// Open anything (⌘O): what the openers in the
+    /// [`super::PaletteSources`] find.
+    QuickOpen,
 }
 
 /// A sheet to open.
@@ -97,7 +101,14 @@ pub(crate) struct SheetEntry {
 /// An entry of the command palette.
 #[derive(Clone, PartialEq)]
 pub struct PaletteItem {
+    /// What its runs are remembered by (recently run entries come
+    /// first); its label when unset.
+    pub id: Option<String>,
     pub label: String,
+    /// Its group (`Tabs`): found by it too.
+    pub group: String,
+    /// Its key, shown at the row's end (`⌘W`).
+    pub shortcut: Option<String>,
     pub detail: Option<String>,
     pub icon: Option<Icon>,
     /// Words it is also found by.
@@ -109,7 +120,10 @@ impl PaletteItem {
     /// An entry calling the app.
     pub fn call(label: impl Into<String>, f: Callback<()>) -> Self {
         Self {
+            id: None,
             label: label.into(),
+            group: String::new(),
+            shortcut: None,
             detail: None,
             icon: None,
             keywords: String::new(),
@@ -120,7 +134,10 @@ impl PaletteItem {
     /// An entry running a shell command.
     pub fn command(label: impl Into<String>, command: crate::Command) -> Self {
         Self {
+            id: None,
             label: label.into(),
+            group: String::new(),
+            shortcut: None,
             detail: None,
             icon: None,
             keywords: String::new(),
@@ -146,6 +163,24 @@ impl PaletteItem {
     #[must_use]
     pub fn keywords(mut self, words: impl Into<String>) -> Self {
         self.keywords = words.into();
+        self
+    }
+
+    #[must_use]
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    #[must_use]
+    pub fn group(mut self, group: impl Into<String>) -> Self {
+        self.group = group.into();
+        self
+    }
+
+    #[must_use]
+    pub fn shortcut(mut self, keys: impl Into<String>) -> Self {
+        self.shortcut = Some(keys.into());
         self
     }
 }
@@ -323,11 +358,17 @@ fn SheetFrame(entry: SheetEntry, top: bool, depth: usize, phone: bool, dragging:
         "transparent"
     };
     let events = if top { "auto" } else { "none" };
-    let palette = matches!(entry.spec.content, SheetContent::Palette(_));
+    let palette = matches!(
+        entry.spec.content,
+        SheetContent::Palette(_) | SheetContent::QuickOpen
+    );
     let body = match entry.spec.content.clone() {
         SheetContent::Custom(render) => render.call(()),
         SheetContent::Menu(items) => rsx! { ActionList { items } },
-        SheetContent::Palette(items) => rsx! { PaletteView { items, phone } },
+        SheetContent::Palette(items) => rsx! { super::palette::PaletteView { items, phone } },
+        SheetContent::QuickOpen => {
+            rsx! { super::palette::PaletteView { items: Vec::new(), phone, open: true } }
+        }
     };
     let title = entry.spec.title.clone();
     let header = rsx! {
@@ -464,99 +505,6 @@ fn ActionList(items: Vec<MenuItem>) -> Element {
                                     if let Some(icon) = item.icon { IconView { icon, size: 20.0 } }
                                 }
                                 span { style: "flex: 1 1 0px; min-width: 0; white-space: nowrap; overflow: hidden;", "{item.label}" }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// The command palette: a search field over the matching entries.
-#[component]
-fn PaletteView(items: Vec<PaletteItem>, phone: bool) -> Element {
-    let shell = use_shell();
-    let mut query = use_signal(String::new);
-    let mut chosen = use_signal(|| 0usize);
-    let entries: Vec<(&str, String)> = items
-        .iter()
-        .map(|i| {
-            (
-                i.label.as_str(),
-                format!("{} {}", i.keywords, i.detail.clone().unwrap_or_default()),
-            )
-        })
-        .collect();
-    let pairs: Vec<(&str, &str)> = entries.iter().map(|(l, e)| (*l, e.as_str())).collect();
-    let order = palette_order(&query(), &pairs);
-    let shown: Vec<PaletteItem> = order
-        .iter()
-        .filter_map(|&i| items.get(i).cloned())
-        .collect();
-    let n = shown.len();
-    let pick = chosen().min(n.saturating_sub(1));
-    let first = shown.get(pick).map(|i| i.action.clone());
-    let size = if phone { "17px" } else { "15px" };
-    rsx! {
-        div {
-            class: "as-palette",
-            style: "display: flex; flex-direction: column; gap: 4px;",
-            div {
-                style: "display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 8px; border-bottom: 1px solid var(--as-border); color: var(--as-muted);",
-                IconView { icon: icons::SEARCH, size: 18.0 }
-                input {
-                    r#type: "text",
-                    value: "{query}",
-                    placeholder: "Search for anything",
-                    "aria-label": "Search for anything",
-                    autofocus: true,
-                    style: "flex: 1 1 0px; min-width: 0; border: none; outline: none; background-color: transparent; color: var(--as-text); font-family: var(--as-font); font-size: {size}; padding: 0;",
-                    oninput: move |e| {
-                        query.set(e.value());
-                        chosen.set(0);
-                    },
-                    onkeydown: move |e| {
-                        match e.key().to_string().as_str() {
-                            "ArrowDown" => chosen.set((pick + 1).min(n.saturating_sub(1))),
-                            "ArrowUp" => chosen.set(pick.saturating_sub(1)),
-                            "Enter" => {
-                                if let Some(a) = first.clone() {
-                                    shell.close_top_sheet();
-                                    shell.run_action(Some(a));
-                                }
-                            }
-                            _ => {}
-                        }
-                    },
-                }
-            }
-            if shown.is_empty() {
-                div { style: "padding: 18px 8px; color: var(--as-muted); text-align: center;", "Nothing matches" }
-            }
-            for (i, item) in shown.into_iter().enumerate() {
-                {
-                    let action = item.action.clone();
-                    let bg = if i == pick && !phone { "var(--as-selected)" } else { "transparent" };
-                    rsx! {
-                        div {
-                            key: "{i}-{item.label}",
-                            class: "as-item as-palette-row",
-                            role: "option",
-                            "aria-selected": "{i == pick}",
-                            style: "display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 4px 8px; border-radius: 10px; background-color: {bg};",
-                            onclick: move |_| {
-                                shell.close_top_sheet();
-                                shell.run_action(Some(action.clone()));
-                            },
-                            div { style: "width: 30px; height: 30px; flex: none; border-radius: 8px; background-color: var(--as-raised); display: flex; align-items: center; justify-content: center; color: var(--as-muted);",
-                                IconView { icon: item.icon.unwrap_or(icons::FILE), size: 16.0 }
-                            }
-                            div { style: "flex: 1 1 0px; min-width: 0; display: flex; flex-direction: column; overflow: hidden;",
-                                span { style: "white-space: nowrap; overflow: hidden;", "{item.label}" }
-                                if let Some(d) = item.detail {
-                                    span { style: "font-size: 12px; color: var(--as-muted); white-space: nowrap; overflow: hidden;", "{d}" }
-                                }
                             }
                         }
                     }
