@@ -30,6 +30,17 @@ use dioxus::prelude::*;
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures_util::StreamExt;
 
+/// When the app started: the clock a shot lays its document out at.
+fn started() -> &'static std::time::Instant {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now)
+}
+
+/// Start the shots' clock (at launch).
+pub(crate) fn start_clock() {
+    let _ = started();
+}
+
 /// The main window's document, in the main root's context.
 #[derive(Clone)]
 pub struct LiveDocument(pub(crate) Rc<RefCell<BaseDocument>>);
@@ -213,8 +224,11 @@ async fn take(live: &LiveDocument, path: &Path) -> Result<Shot, String> {
 
 fn paint(doc: &mut BaseDocument) -> (Vec<u8>, u32, u32, f64) {
     use anyrender::PaintScene as _;
-    // As the last frame resolved it: resolving again here would need the
-    // frame's animation clock, which the published blitz-dom keeps private.
+    // Laid out now, not as the last frame left it: a window the compositor
+    // is not showing (minimised, on another desktop) gets no frames, so
+    // its document would still be as it was when it was last on screen.
+    // The clock is the app's own (CSS animations sit at its "now").
+    doc.resolve(started().elapsed().as_secs_f64());
     let (width, height) = doc.viewport().window_size;
     let scale = doc.viewport().scale_f64();
     let (width, height) = (width.max(1), height.max(1));

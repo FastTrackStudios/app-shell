@@ -91,6 +91,7 @@ impl Default for Config {
 /// main one with the app's layout signal, a pop-out's with
 /// `app_shell::ui::use_window_layout()` and its `window`.
 pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Config) {
+    shot::start_clock();
     // blitz-net loads on Tokio, as dioxus-native's launch does: the app's
     // runtime when it entered one, else one here for the app's life.
     let runtime = tokio::runtime::Handle::try_current().is_err().then(|| {
