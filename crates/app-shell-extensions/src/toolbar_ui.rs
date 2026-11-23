@@ -711,6 +711,13 @@ fn ToolItemView(cx: Ctx, item: ToolItem, path: String) -> Element {
     }
 }
 
+/// `css` with the shell's theme's variables resolved: an icon's stroke and
+/// a tinted image take colours, not `var(--as-…)`.
+fn concrete(css: &str) -> String {
+    try_consume_context::<Signal<app_shell::Theme>>()
+        .map_or_else(|| app_shell::Theme::dark().resolve(css), |t| t.peek().resolve(css))
+}
+
 #[allow(clippy::too_many_lines)]
 #[component]
 fn ToolButton(cx: Ctx, item: ToolItem, path: String, joined: bool) -> Element {
@@ -780,7 +787,7 @@ fn ToolButton(cx: Ctx, item: ToolItem, path: String, joined: bool) -> Element {
         })
         // In the item's ink, as its icon is: `currentColor`, and with
         // `tint` every colour it was drawn in.
-        .map(|uri| architect_extensions::toolbars::Toolbars::tinted(&uri, &ink, item.tint));
+        .map(|uri| architect_extensions::toolbars::Toolbars::tinted(&uri, &concrete(&ink), item.tint));
     let iconic = !item.icon.is_empty() || image.is_some();
     let show_label = !(iconic && (item.hide_label || cx.hide_labels || cx.header));
     let (size, glyph) = (cx.size, cx.glyph);
@@ -862,7 +869,7 @@ fn ToolButton(cx: Ctx, item: ToolItem, path: String, joined: bool) -> Element {
                 if let Some(src) = image {
                     img { src: "{src}", alt: "", style: "width:{glyph}px; height:{glyph}px; object-fit:contain;" }
                 } else if iconic {
-                    app_shell::ui::IconView { icon: app_shell::ui::named_icon(&item.icon), size: glyph as f32, color: ink.to_string() }
+                    app_shell::ui::IconView { icon: app_shell::ui::named_icon(&item.icon), size: glyph as f32, color: concrete(&ink) }
                 }
                 if show_label {
                     span { "{label}" }

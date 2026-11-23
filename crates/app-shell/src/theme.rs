@@ -146,6 +146,28 @@ impl Theme {
             .map(|(_, v)| v.as_str())
     }
 
+    /// `css` with each `var(--as-…)` in it replaced by this theme's value
+    /// (else the default's): what an SVG's presentation attributes and an
+    /// image's colours need, which take no CSS variables.
+    #[must_use]
+    pub fn resolve(&self, css: &str) -> String {
+        let mut out = css.to_owned();
+        for _ in 0..4 {
+            let Some(start) = out.find("var(") else { break };
+            let Some(len) = out[start..].find(')') else { break };
+            let inner = &out[start + 4..start + len];
+            let (name, fallback) = inner.split_once(',').unwrap_or((inner, ""));
+            let name = name.trim();
+            let value = self
+                .get(name)
+                .or_else(|| VARIABLES.iter().find(|(k, _)| *k == name).map(|(_, v)| *v))
+                .unwrap_or(fallback.trim())
+                .to_owned();
+            out.replace_range(start..=start + len, &value);
+        }
+        out
+    }
+
     /// As declarations for a `style` attribute: `--as-bg: #18181b; …`.
     #[must_use]
     pub fn style(&self) -> String {
@@ -154,6 +176,19 @@ impl Theme {
             .map(|(k, v)| format!("{k}: {v};"))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+
+    #[test]
+    fn a_variable_is_its_value() {
+        let t = Theme::dark().set("--as-muted", "#a1a1aa");
+        assert_eq!(t.resolve("var(--as-muted)"), "#a1a1aa");
+        assert_eq!(t.resolve("#fff"), "#fff");
+        assert_eq!(t.resolve("var(--no-such, red)"), "red");
     }
 }
 

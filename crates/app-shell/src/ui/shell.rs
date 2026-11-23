@@ -1252,6 +1252,12 @@ pub fn AppShell(
 ) -> Element {
     let windows = try_use_context::<Windows>();
     let hub = try_use_context::<LayoutHub>();
+    // The theme as values, for what cannot read its variables (an SVG's
+    // presentation attributes, an image's colours).
+    let mut vars = use_context_provider(|| Signal::new(theme.clone()));
+    if *vars.peek() != theme {
+        vars.set(theme.clone());
+    }
     let own_layout = use_signal(Workspace::new);
     let has_layout = layout.is_some();
     let layout = layout.unwrap_or(own_layout);
