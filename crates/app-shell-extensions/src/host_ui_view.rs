@@ -401,7 +401,7 @@ pub fn HostUiLayer(host: Host) -> Element {
 /// were not the person's theme (a light theme drew a black prompt). So
 /// the layer sets them itself, from the shell's theme, as the toolbars and
 /// extension windows draw theirs.
-fn layer_look(t: &architect_shell::ShellTheme) -> String {
+fn layer_look(t: &crate::theme_ui::ChromeTheme) -> String {
     format!(
         "font-family: {font}; --background: {desk}; --foreground: {ink}; --card: {pill}; \
          --card-foreground: {ink}; --popover: {pill}; --popover-foreground: {ink}; --border: {rule}; \

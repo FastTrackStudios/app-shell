@@ -20,7 +20,13 @@ pub const VARIABLES: &[(&str, &str)] = &[
     // The accent: the active tab's mark, a drop's highlight.
     ("--as-accent", "#6366f1"),
     ("--as-accent-soft", "rgba(99, 102, 241, 0.28)"),
+    // Text on the accent (a badge, a primary button).
+    ("--as-accent-text", "#ffffff"),
     ("--as-danger", "#ef4444"),
+    // What lifts off the page: a button over it, and what floats over
+    // everything (a menu, a popover, a floating pane).
+    ("--as-shadow-lift", "0 6px 20px rgba(0, 0, 0, 0.35)"),
+    ("--as-shadow-float", "0 16px 44px rgba(0, 0, 0, 0.55)"),
     // Sizes.
     (
         "--as-font",
@@ -69,6 +75,8 @@ pub const LIGHT: &[(&str, &str)] = &[
     ("--as-accent", "#4f46e5"),
     ("--as-accent-soft", "rgba(79, 70, 229, 0.18)"),
     ("--as-danger", "#dc2626"),
+    ("--as-shadow-lift", "0 6px 20px rgba(0, 0, 0, 0.12)"),
+    ("--as-shadow-float", "0 16px 44px rgba(0, 0, 0, 0.18)"),
     ("--as-topbar-bg", "#fafafa"),
     ("--as-sidebar-bg", "rgba(244, 244, 245, 0.92)"),
     ("--as-selected", "rgba(0, 0, 0, 0.07)"),

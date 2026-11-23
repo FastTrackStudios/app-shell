@@ -10,8 +10,9 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::theme_ui::ChromeTheme;
 use architect::action::{ActionList, Invocation, InvocationSource};
-use architect_shell::{ShellTheme, named_icon};
+use architect_shell::named_icon;
 use architect_workspace::{ContextEntry, HeaderTools, PaneId, Side, Target, View, try_use_pane_of};
 use dioxus::prelude::*;
 use futures::StreamExt as _;
@@ -736,7 +737,7 @@ fn ToolItemView(cx: Ctx, item: ToolItem, path: String) -> Element {
 fn ToolButton(cx: Ctx, item: ToolItem, path: String, joined: bool) -> Element {
     // Its action's state may have moved: read again with every change.
     let (_, _) = (cx.ui.revision(), cx.ui.ticks());
-    let t: ShellTheme = crate::theme_ui::shell_theme();
+    let t: ChromeTheme = crate::theme_ui::shell_theme();
     let viewport = try_use_context::<Editor>().map(|e| e.viewport);
     let kept = use_signal(Kept::default);
     let host = cx.ui.host();

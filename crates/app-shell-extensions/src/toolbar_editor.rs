@@ -809,7 +809,7 @@ pub(crate) fn Popover(ui: ExtensionUi, test: String, children: Element) -> Eleme
     }
 }
 
-fn dialog_style(t: &architect_shell::ShellTheme, w: u32) -> String {
+fn dialog_style(t: &crate::theme_ui::ChromeTheme, w: u32) -> String {
     format!(
         "width:{w}px; max-height:80%; display:flex; flex-direction:column; gap:8px; padding:12px; \
          border-radius:12px; background:{}; border:1px solid {}; box-shadow:{}; color:{}; font-family:{};",
@@ -817,7 +817,7 @@ fn dialog_style(t: &architect_shell::ShellTheme, w: u32) -> String {
     )
 }
 
-fn input_style(t: &architect_shell::ShellTheme) -> String {
+fn input_style(t: &crate::theme_ui::ChromeTheme) -> String {
     format!(
         "height:28px; padding:0 8px; border-radius:6px; border:1px solid {}; background:{}; color:{}; font-size:13px;",
         t.rule, t.sheet, t.ink
@@ -999,16 +999,8 @@ fn WidgetPicker(ui: ExtensionUi, purpose: For) -> Element {
         format!(
             "padding:0 10px; height:26px; border:none; border-radius:6px; font-size:12px; cursor:pointer; text-align:left; \
              background:{}; color:{};",
-            if on {
-                t.accent_soft.as_ref()
-            } else {
-                "transparent"
-            },
-            if on {
-                t.accent.as_ref()
-            } else {
-                t.ink.as_ref()
-            }
+            if on { t.accent_soft } else { "transparent" },
+            if on { t.accent } else { t.ink }
         )
     };
     let insert_host = host;
