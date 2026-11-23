@@ -52,6 +52,7 @@ use futures_util::StreamExt;
 #[cfg(target_os = "macos")]
 use dioxus_native::winit::platform::macos::ApplicationHandlerExtMacOS;
 
+pub mod net;
 pub mod shot;
 
 pub use dioxus_native::winit;
@@ -89,6 +90,15 @@ impl Default for Config {
 /// main one with the app's layout signal, a pop-out's with
 /// `app_shell::ui::use_window_layout()` and its `window`.
 pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Config) {
+    // blitz-net loads on Tokio, as dioxus-native's launch does: the app's
+    // runtime when it entered one, else one here for the app's life.
+    let runtime = tokio::runtime::Handle::try_current().is_err().then(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("a Tokio runtime for the app's loads")
+    });
+    let _entered = runtime.as_ref().map(tokio::runtime::Runtime::enter);
     let event_loop = blitz_shell::create_default_event_loop();
     let winit_proxy = event_loop.create_proxy();
     // The main window's events go to dioxus-native's queue; the pop-outs'
@@ -105,18 +115,23 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         focus: RefCell::new(Vec::new()),
         sizes: RefCell::new(Vec::new()),
         shots: Rc::new(RefCell::new(config.control.as_deref().map(shot::serve))),
+        net: net::AppNetProvider::shared(&proxy),
     });
-    let vdom = VirtualDom::new_with_props(
+    let mut vdom = VirtualDom::new_with_props(
         MainRoot,
         MainRootProps {
             app: main,
             desk: DeskHandle(desk.clone()),
         },
     );
-    let doc = DioxusDocument::new(vdom, document_config());
+    // In context too, as dioxus-native's launch puts it, for what loads
+    // through the document's provider from a component.
+    vdom.provide_root_context(Arc::clone(&desk.net));
+    let doc = DioxusDocument::new(vdom, document_config(&desk.net));
     // The main window's document, for shots (`shot`).
     let live = shot::LiveDocument(doc.inner.clone());
-    doc.vdom.in_scope(ScopeId::ROOT, move || provide_context(live));
+    doc.vdom
+        .in_scope(ScopeId::ROOT, move || provide_context(live));
     let attributes = frame(
         WindowAttributes::default()
             .with_title(config.title.clone())
@@ -138,10 +153,12 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
     }
 }
 
-/// What a window's document is made with: Blitz's HTML parser, so
+/// What a window's document is made with: the app's loads (`net`) and
+/// Blitz's HTML parser, so
 /// `dangerous_inner_html` makes nodes.
-fn document_config() -> DocumentConfig {
+fn document_config(net: &Arc<dyn blitz_traits::net::NetProvider>) -> DocumentConfig {
     DocumentConfig {
+        net_provider: Some(Arc::clone(net)),
         html_parser_provider: Some(Arc::new(blitz_html::HtmlProvider)),
         ..Default::default()
     }
@@ -172,6 +189,8 @@ struct Desk {
     focus: RefCell<Vec<(OsId, UnboundedSender<bool>)>>,
     /// Each window's root, told its window's new size (logical points).
     sizes: RefCell<Vec<(OsId, UnboundedSender<Size>)>>,
+    /// Every window's loads (`net`): one provider, as one browser has.
+    net: Arc<dyn blitz_traits::net::NetProvider>,
     /// Shots asked on the control socket, taken by the main root.
     shots: Rc<RefCell<Option<futures_channel::mpsc::UnboundedReceiver<shot::Job>>>>,
 }
@@ -454,7 +473,7 @@ impl App {
             attributes =
                 attributes.with_position(LogicalPosition::new(f64::from(b.x), f64::from(b.y)));
         }
-        let vdom = VirtualDom::new_with_props(
+        let mut vdom = VirtualDom::new_with_props(
             PopoutRoot,
             PopoutRootProps {
                 app: self.popout,
@@ -462,7 +481,8 @@ impl App {
                 desk: DeskHandle(self.desk.clone()),
             },
         );
-        let doc = DioxusDocument::new(vdom, document_config());
+        vdom.provide_root_context(Arc::clone(&self.desk.net));
+        let doc = DioxusDocument::new(vdom, document_config(&self.desk.net));
         let config = WindowConfig::with_attributes(
             Box::new(doc),
             DioxusNativeWindowRenderer::new(),

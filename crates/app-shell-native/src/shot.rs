@@ -57,7 +57,13 @@ pub fn socket_path(name: &str) -> PathBuf {
         .join("app-shell");
     let file: String = name
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     dir.join(format!("{file}.sock"))
 }
@@ -156,7 +162,10 @@ fn json_string(s: &str) -> String {
 
 fn target(path: Option<&str>) -> Result<PathBuf, String> {
     let path = path.map_or_else(|| std::env::temp_dir().join("app-shot.png"), PathBuf::from);
-    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("png")) {
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("png"))
+    {
         return Err(format!("{}: a shot's path ends in .png", path.display()));
     }
     std::path::absolute(&path).map_err(|e| format!("{}: {e}", path.display()))
@@ -170,7 +179,9 @@ pub(crate) fn use_shots(jobs: Rc<RefCell<Option<UnboundedReceiver<Job>>>>) {
         let jobs = jobs.borrow_mut().take();
         let live = live.clone();
         async move {
-            let (Some(mut jobs), Some(live)) = (jobs, live) else { return };
+            let (Some(mut jobs), Some(live)) = (jobs, live) else {
+                return;
+            };
             while let Some(job) = jobs.next().await {
                 let shot = take(&live, &job.path).await;
                 let _ = job.answer.send(shot);
