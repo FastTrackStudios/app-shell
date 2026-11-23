@@ -77,7 +77,7 @@ The runtime (`architect`, `architect-extensions`,
 kit: the palette is app-shell's (`app_shell::palette`, `PaletteSources`),
 the panes, windows and sheets app-shell's, the remote views' frame pacing
 and field focus here (`pacing`, `field_focus`), the extensions page's
-controls here (`kit`). With feature `page`, `architect-extensions/manager`
-still brings `architect-workspace` (its layouts kind reads
-`architect_workspace::home`).
+controls here (`kit`). Feature `page` (`architect-extensions/manager`)
+no longer brings `architect-workspace` or `architect-commands`: the
+manager's layouts kind reads plain data (`kinds::Layouts`).
 
