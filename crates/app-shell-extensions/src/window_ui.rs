@@ -462,11 +462,13 @@ pub fn main_ui() -> Option<ExtensionUi> {
 
 /// A pop-out window's shell, drawing the extensions' views as the main
 /// window does: what an app hands `app_shell_native::launch` as its
-/// `popout` (or mounts in its own), `kinds` its own tab kinds.
+/// `popout` (or mounts in its own), `kinds` its own tab kinds, `theme`
+/// the main window's (a pop-out is a document of its own).
 #[component]
 pub fn ExtensionPopout(
     window: app_shell::WindowId,
     #[props(default)] kinds: app_shell::ui::TabKinds,
+    #[props(default)] theme: app_shell::Theme,
 ) -> Element {
     let layout = app_shell::ui::use_window_layout();
     let ui = main_ui();
@@ -476,6 +478,6 @@ pub fn ExtensionPopout(
         ui.register_kinds(&mut kinds);
     }
     rsx! {
-        app_shell::ui::AppShell { layout, kinds, window }
+        app_shell::ui::AppShell { layout, kinds, window, theme }
     }
 }
