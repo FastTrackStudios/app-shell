@@ -18,7 +18,7 @@
 //! `Meters` in context; `EXT_VIEWS` reads it). While an event goes
 //! unanswered past the budget ([`REMOTE_BUDGET`]) — the process's view
 //! thread is busy with a long handler — the pane keeps its last frame
-//! with a busy mark (`architect_shell::BusyBadge`); the app runs on.
+//! with a busy mark ([`BusyBadge`]); the app runs on.
 //!
 //! The applier trusts nothing: an edit naming a node it does not have, a
 //! child that is not there, a move that would make a cycle, or a frame
@@ -101,7 +101,7 @@ pub const MEASURE_EVERY: Duration = Duration::from_millis(50);
 const FIT_CSS: &str = "html, body { margin: 0 !important; height: auto !important; }                        main { min-height: 0 !important; height: auto !important; display: flow-root !important; }";
 
 /// What a view's sub-document starts from: what a linked view inherits
-/// from the pane it is in (`architect_workspace`'s host: no margin, the
+/// from the pane it is in (the shell's pane: no margin, the
 /// pane's height, the theme's ink and font at 13px), in the theme's
 /// variables (`set_theme_css`). Without it a view that sets no colour of
 /// its own draws black in the user agent's serif on a dark theme.
@@ -143,9 +143,9 @@ pub struct RemoteDocument {
     /// Whether an input method is composing (a `compositionstart` was
     /// sent and its end not yet).
     composing: bool,
-    /// Its share of `architect_workspace::field_focused`: a field of its
+    /// Its share of `crate::field_focus::field_focused`: a field of its
     /// own has the focus (a pane's view keys leave letters to it).
-    field: architect_workspace::FieldFocus,
+    field: crate::field_focus::FieldFocus,
     /// The scenes the view sent, by hash (#175).
     scenes: architect_extensions::scene::SceneCache,
     /// Scenes decoded off the UI thread before their frame is applied
@@ -268,7 +268,7 @@ impl RemoteDocument {
             fitted: false,
             held: None,
             composing: false,
-            field: architect_workspace::FieldFocus::new(),
+            field: crate::field_focus::FieldFocus::new(),
             scenes: architect_extensions::scene::SceneCache::new(),
             predecoded: HashMap::new(),
             holds: HashMap::new(),
@@ -416,7 +416,7 @@ impl RemoteDocument {
     }
 
     /// Whether a text field of its own has the focus, told to
-    /// `architect_workspace::field_focused`.
+    /// `crate::field_focus::field_focused`.
     fn sync_field(&mut self) {
         let typing = self
             .doc
@@ -830,7 +830,7 @@ impl RemoteDocument {
     }
 
     /// Sets the host's theme for the view: CSS (the host's `:root`
-    /// custom properties, `architect_theme::RootCss`), so the view's
+    /// custom properties, `crate::theme_ui::ViewTheme`), so the view's
     /// `var(--…)` follow the app's theme live. A sub-document doesn't see
     /// the host's own sheets.
     pub fn set_theme_css(&mut self, css: &str) {
@@ -1506,7 +1506,7 @@ pub struct HostShell {
     /// The view's frames, asked of the window at most once a refresh
     /// (#840): a batch applied to its document asks for one, and so does
     /// the document itself after each change it makes.
-    pacer: architect_workspace::pacing::Pacer,
+    pacer: crate::pacing::Pacer,
     /// Where the pane is in the window, CSS pixels, and the view's last
     /// caret area while its input method is on (in its own pixels).
     state: Arc<Mutex<ShellState>>,
@@ -1524,7 +1524,7 @@ impl HostShell {
     pub fn new(window: Arc<dyn ShellProvider>, x: f32, y: f32) -> Self {
         let redraw = Arc::clone(&window);
         Self {
-            pacer: architect_workspace::pacing::Pacer::new(Arc::new(move || {
+            pacer: crate::pacing::Pacer::new(Arc::new(move || {
                 redraw.request_redraw();
             })),
             window,
@@ -1552,7 +1552,7 @@ impl HostShell {
 impl HostShell {
     /// What asks the window for the view's frames, paced to the display.
     #[must_use]
-    pub const fn pacer(&self) -> &architect_workspace::pacing::Pacer {
+    pub const fn pacer(&self) -> &crate::pacing::Pacer {
         &self.pacer
     }
 }
@@ -1869,7 +1869,7 @@ async fn follow(
     view: String,
     mut shown: Signal<Shown>,
     mut retry: mpsc::UnboundedReceiver<()>,
-    theme: Option<Signal<String>>,
+    theme: Option<crate::theme_ui::ViewTheme>,
     mut timing: Timing,
     fit: Option<Fit>,
     overlay: Option<crate::scene_widget::OverlayLayer>,
@@ -1967,8 +1967,10 @@ async fn follow(
             if engine {
                 remote.set_engine(architect_scene::engine::published(&extension));
             }
-            if let Some(css) = theme {
-                remote.set_theme_css(&css.peek());
+            {
+                let css =
+                    theme.map_or_else(crate::theme_ui::default_view_css, |t| t.0.peek().clone());
+                remote.set_theme_css(&css);
             }
             if fit.as_ref().is_some_and(|f| f.sized) {
                 remote.fit_content();
@@ -2036,9 +2038,7 @@ async fn follow(
             // An event is always answered (wire 5), with no edits when the
             // view did not change: that answer is timed, not drawn.
             let changes = !matches!(&frame, Frame::Edits { edits } if edits.is_empty());
-            if changes {
-                architect_workspace::frames::batch_arrived();
-            }
+            if changes {}
             // Its scenes decoded off the UI thread first.
             let (frame, decoded) = decode_scenes(frame).await;
             // A view of a group (Studio's arrangement and mixer) shows an
@@ -2083,7 +2083,6 @@ async fn follow(
                 // take the next present's place, and the frame that does
                 // change it waits a refresh behind (#840).
                 if changes {
-                    architect_workspace::frames::batch_applied();
                     pacer.request();
                 }
                 (applied, held)
@@ -2546,12 +2545,10 @@ fn Mount(
     }
     let height = use_signal(|| 0.0_f32);
     // The app's theme, into the view's document now and on every change.
-    let theme = architect_theme::try_use_root_css();
+    let theme = try_use_context::<crate::theme_ui::ViewTheme>();
     let mut node_at = use_signal(|| None::<NodeHandle>);
     use_effect(move || {
-        let Some(css) = theme.map(|t| t()) else {
-            return;
-        };
+        let css = theme.map_or_else(crate::theme_ui::default_view_css, |t| (t.0)());
         let Some(node) = node_at.peek().clone() else {
             return;
         };
@@ -2686,7 +2683,7 @@ fn Mount(
                 }
             }
             if busy() && placeholder.is_none() && !layer_only {
-                architect_shell::BusyBadge {}
+                BusyBadge {}
             }
             if let Some((why, stopped)) = placeholder {
                 div {
@@ -2835,14 +2832,14 @@ mod pacing_tests {
     /// free swapchain image with the window's thread blocked.
     #[test]
     fn a_views_redraws_right_after_a_frame_share_one_at_the_next_refresh() {
-        if !architect_workspace::pacing::enabled() {
+        if !crate::pacing::enabled() {
             return;
         }
         let asked = Arc::new(AtomicU32::new(0));
         let shell = HostShell::new(Arc::new(Counting(Arc::clone(&asked))), 0.0, 0.0);
-        architect_workspace::pacing::set_refresh(Duration::from_micros(8_333));
+        crate::pacing::set_refresh(Duration::from_micros(8_333));
         // A frame that waited for its image: it ended at a refresh.
-        architect_workspace::pacing::frame_ended(Instant::now(), Duration::from_millis(7));
+        crate::pacing::frame_ended(Instant::now(), Duration::from_millis(7));
         for _ in 0..10 {
             shell.request_redraw();
         }
@@ -2853,5 +2850,19 @@ mod pacing_tests {
         );
         std::thread::sleep(Duration::from_millis(20));
         assert_eq!(asked.load(Ordering::SeqCst), 1, "ten changes, one frame");
+    }
+}
+
+/// A pane's busy mark: its process has not answered within the budget.
+#[component]
+pub fn BusyBadge() -> Element {
+    rsx! {
+        div {
+            role: "status",
+            "aria-label": "Busy",
+            style: "position: absolute; top: 8px; right: 8px; z-index: 5; padding: 2px 8px; border-radius: 10px; \
+                    background-color: var(--as-raised); color: var(--as-muted); font-size: 11px; pointer-events: none;",
+            "Busy…"
+        }
     }
 }

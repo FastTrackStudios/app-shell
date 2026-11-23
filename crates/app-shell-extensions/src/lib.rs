@@ -22,6 +22,7 @@ pub use architect_extensions_dioxus;
 
 pub mod bar;
 pub mod embed_views;
+pub mod field_focus;
 pub mod host_ui_view;
 pub mod interface;
 pub mod palette;
@@ -36,6 +37,7 @@ pub mod window_ui;
 
 #[cfg(all(feature = "remote", unix))]
 pub mod barrier;
+pub mod pacing;
 #[cfg(all(feature = "remote", unix))]
 pub mod remote;
 #[cfg(feature = "remote")]

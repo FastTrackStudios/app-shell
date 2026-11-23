@@ -20,7 +20,6 @@ default = ["remote"]
 remote = [
     "architect-extensions/process",
     "architect-extensions/scenes",
-    "architect-theme/dioxus",
     "dep:blitz-dom",
     "dep:blitz-traits",
     "dep:cursor-icon",
@@ -49,9 +48,6 @@ architect = { git = "https://github.com/FastTrackStudios/architect", branch = "s
 architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["host", "linked", "dioxus", "uikit"] }
 architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["process"] }
 architect-settings = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
-architect-shell = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui"] }
-architect-workspace = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui", "paint-ui"] }
-architect-theme = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["dioxus"] }
 architect-views = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
 architect-scene = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
 dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41", default-features = false, features = ["lib"] }

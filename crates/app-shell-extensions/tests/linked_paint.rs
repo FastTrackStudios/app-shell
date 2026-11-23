@@ -1,6 +1,6 @@
 //! #591: a linked extension's paint view. `Builder::paint` registers a
 //! view that records an anyrender scene for its pane and takes the pane's
-//! input; mounted in a workspace pane on Blitz, a press reaches it in the
+//! input; mounted in an app-shell pane on Blitz, a press reaches it in the
 //! pane's own coordinates and what it draws is in the window's scene.
 
 #![allow(
@@ -14,12 +14,14 @@
 
 use std::sync::Mutex;
 
+use app_shell::ui::{AppShell, FormFactor, TabCtx, TabKind, TabKinds, Tabs};
+use app_shell::{Pane, Target, Workspace};
 use architect_extensions::linked::{Builder, Extension};
 use architect_extensions_dioxus::BuilderExt as _;
-use architect_workspace::paint::peniko::kurbo::{Affine, Circle};
-use architect_workspace::paint::peniko::{Color, Fill};
-use architect_workspace::paint::{PaintScene as _, PaintView, Scene};
-use architect_workspace::{ViewCtx, ViewInput};
+use architect_scene::paint::peniko::kurbo::{Affine, Circle};
+use architect_scene::paint::peniko::{Color, Fill};
+use architect_scene::paint::{PaintScene as _, PaintView, Scene};
+use architect_scene::view::{ViewCtx, ViewInput};
 use blitz_dom::{Document as _, DocumentConfig};
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, Modifiers, MouseEventButton, MouseEventButtons, Point,
@@ -80,26 +82,19 @@ kind = "paint"
 }
 
 fn app() -> Element {
-    let workspace = use_signal(|| {
-        let mut w = architect_workspace::Workspace::new();
-        w.open(
-            architect_workspace::Pane::new("dots", "dots", "Dots"),
-            architect_workspace::Target::Tab,
-        )
-        .unwrap();
+    let layout = use_signal(|| {
+        let mut w = Workspace::new();
+        w.open(Pane::new("dots", "dots", "Dots"), Target::Tab)
+            .unwrap();
         w
     });
-    let views = use_hook(|| {
+    let kinds = use_hook(|| {
         let root = Builder::of(&Sketchy).view_root("dots").unwrap();
-        architect_workspace::Views::new().view(architect_workspace::View::new(
-            "dots",
-            "Dots",
-            move |_| root(),
-        ))
+        TabKinds::new().with(TabKind::new("dots", "Dots", move |_: TabCtx| root()))
     });
     rsx! {
         div { style: "width: 400px; height: 300px;",
-            architect_workspace::WorkspaceView { workspace, views }
+            AppShell { layout, kinds, tabs: Tabs::Auto, form: FormFactor::Desktop, top_bar: rsx! {} }
         }
     }
 }

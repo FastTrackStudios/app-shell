@@ -141,10 +141,7 @@ dependencies = [
  "architect-extensions-dioxus",
  "architect-scene",
  "architect-settings",
- "architect-shell",
- "architect-theme",
  "architect-views",
- "architect-workspace",
  "blitz-dom",
  "blitz-paint",
  "blitz-traits",
@@ -247,17 +244,10 @@ name = "architect-commands"
 version = "0.1.0"
 source = "git+https://github.com/FastTrackStudios/architect?branch=strip%2Fapplication-framework#547f7be85ff4c2cc04a9870d03c2a1e505ed3585"
 dependencies = [
- "architect",
  "architect-input",
  "architect-palette",
- "architect-shell",
- "dioxus",
  "facet",
  "facet-json",
- "futures-channel",
- "futures-timer",
- "futures-util",
- "lucide-dioxus",
  "serde",
  "serde_json",
 ]
@@ -396,13 +386,10 @@ name = "architect-input"
 version = "0.1.0"
 source = "git+https://github.com/FastTrackStudios/architect?branch=strip%2Fapplication-framework#547f7be85ff4c2cc04a9870d03c2a1e505ed3585"
 dependencies = [
- "dioxus",
  "facet",
- "gloo-timers 0.3.0",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
- "tokio",
 ]
 
 [[package]]
@@ -506,28 +493,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "architect-shell"
-version = "0.1.0"
-source = "git+https://github.com/FastTrackStudios/architect?branch=strip%2Fapplication-framework#547f7be85ff4c2cc04a9870d03c2a1e505ed3585"
-dependencies = [
- "architect-favourites",
- "architect-theme",
- "block2",
- "dioxus",
- "futures-channel",
- "futures-timer",
- "futures-util",
- "lucide-dioxus",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "objc2-ui-kit",
- "raw-window-handle",
- "tracing",
- "web-time",
-]
-
-[[package]]
 name = "architect-theme"
 version = "0.1.0"
 source = "git+https://github.com/FastTrackStudios/architect?branch=strip%2Fapplication-framework#547f7be85ff4c2cc04a9870d03c2a1e505ed3585"
@@ -554,26 +519,12 @@ name = "architect-workspace"
 version = "0.1.0"
 source = "git+https://github.com/FastTrackStudios/architect?branch=strip%2Fapplication-framework#547f7be85ff4c2cc04a9870d03c2a1e505ed3585"
 dependencies = [
- "anyrender",
  "architect",
  "architect-commands",
- "architect-scene",
- "architect-shell",
- "architect-theme",
  "architect-views",
- "blitz-dom",
- "blitz-traits",
- "crdt",
- "cursor-icon",
- "dioxus",
- "dioxus-native-dom",
  "facet",
  "facet-json",
  "futures-channel",
- "futures-timer",
- "futures-util",
- "lucide-dioxus",
- "peniko",
  "serde_json",
  "thiserror 2.0.21",
 ]
@@ -1419,12 +1370,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "data-encoding"
-version = "2.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
-
-[[package]]
 name = "data-url"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1496,11 +1441,8 @@ source = "git+https://github.com/DioxusLabs/dioxus?rev=430cfb563f1b70602ef387f0c
 dependencies = [
  "dioxus-asset-resolver",
  "dioxus-cli-config",
- "dioxus-config-macro",
  "dioxus-core",
- "dioxus-devtools",
  "dioxus-history",
- "dioxus-logger",
  "dioxus-web",
  "manganis",
  "subsecond",
@@ -1533,11 +1475,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-config-macro"
-version = "0.8.0-alpha.3"
-source = "git+https://github.com/DioxusLabs/dioxus?rev=430cfb563f1b70602ef387f0c80f171d84527b41#430cfb563f1b70602ef387f0c80f171d84527b41"
-
-[[package]]
 name = "dioxus-config-macros"
 version = "0.8.0-alpha.3"
 source = "git+https://github.com/DioxusLabs/dioxus?rev=430cfb563f1b70602ef387f0c80f171d84527b41#430cfb563f1b70602ef387f0c80f171d84527b41"
@@ -1560,33 +1497,6 @@ dependencies = [
  "dioxus-stores",
  "dioxus-vdom",
  "dioxus-vdom-macro",
-]
-
-[[package]]
-name = "dioxus-devtools"
-version = "0.8.0-alpha.3"
-source = "git+https://github.com/DioxusLabs/dioxus?rev=430cfb563f1b70602ef387f0c80f171d84527b41#430cfb563f1b70602ef387f0c80f171d84527b41"
-dependencies = [
- "dioxus-cli-config",
- "dioxus-devtools-types",
- "dioxus-signals",
- "dioxus-vdom",
- "serde",
- "serde_json",
- "subsecond",
- "thiserror 2.0.21",
- "tracing",
- "tungstenite",
-]
-
-[[package]]
-name = "dioxus-devtools-types"
-version = "0.8.0-alpha.3"
-source = "git+https://github.com/DioxusLabs/dioxus?rev=430cfb563f1b70602ef387f0c80f171d84527b41#430cfb563f1b70602ef387f0c80f171d84527b41"
-dependencies = [
- "dioxus-vdom",
- "serde",
- "subsecond-types",
 ]
 
 [[package]]
@@ -1681,17 +1591,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
-]
-
-[[package]]
-name = "dioxus-logger"
-version = "0.8.0-alpha.3"
-source = "git+https://github.com/DioxusLabs/dioxus?rev=430cfb563f1b70602ef387f0c80f171d84527b41#430cfb563f1b70602ef387f0c80f171d84527b41"
-dependencies = [
- "dioxus-cli-config",
- "tracing",
- "tracing-subscriber",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -1824,7 +1723,6 @@ source = "git+https://github.com/DioxusLabs/dioxus?rev=430cfb563f1b70602ef387f0c
 dependencies = [
  "dioxus-base-types",
  "dioxus-cli-config",
- "dioxus-devtools",
  "dioxus-document",
  "dioxus-history",
  "dioxus-html",
@@ -1834,7 +1732,6 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "generational-box",
- "gloo-timers 0.4.1",
  "js-sys",
  "lazy-js-bundle",
  "rustc-hash 2.1.3",
@@ -2768,12 +2665,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "httparse"
-version = "1.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
-
-[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3480,14 +3371,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab2f621c6f730cd6bce953ba86144e1c3acd1e7b4f0032bfac14d31ea2c9fb34"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "lucide-dioxus"
-version = "3.63.0"
-source = "git+https://github.com/FastTrackStudios/lucide?tag=fts-upstream-2026-11#84c2659a53044c73b65c1f30f706caa2147f51c3"
-dependencies = [
- "dioxus",
 ]
 
 [[package]]
@@ -4501,18 +4384,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
  "libc",
- "rand_chacha 0.3.1",
+ "rand_chacha",
  "rand_core 0.6.4",
-]
-
-[[package]]
-name = "rand"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
-dependencies = [
- "rand_chacha 0.9.0",
- "rand_core 0.9.5",
 ]
 
 [[package]]
@@ -4537,16 +4410,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_chacha"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
-dependencies = [
- "ppv-lite86",
- "rand_core 0.9.5",
-]
-
-[[package]]
 name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4560,9 +4423,6 @@ name = "rand_core"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
-dependencies = [
- "getrandom 0.3.4",
-]
 
 [[package]]
 name = "rand_core"
@@ -4979,17 +4839,6 @@ source = "git+https://github.com/nicoburns/stylo?rev=78734bf554bb40af9dc11c0eedb
 dependencies = [
  "serde",
  "stable_deref_trait",
-]
-
-[[package]]
-name = "sha1"
-version = "0.10.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.2.17",
- "digest",
 ]
 
 [[package]]
@@ -5870,22 +5719,6 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
-]
-
-[[package]]
-name = "tungstenite"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
-dependencies = [
- "bytes",
- "data-encoding",
- "http",
- "httparse",
- "log",
- "rand 0.9.5",
- "sha1",
- "thiserror 2.0.21",
 ]
 
 [[package]]

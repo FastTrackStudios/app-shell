@@ -88,3 +88,16 @@ pub fn token_var(token: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
+
+/// The CSS a process or WASI view's own document gets for the app's
+/// theme (`:root { --as-…: …; }`), so its `var(--as-…)` follow the app:
+/// provide it where the app's theme changes; without one, app-shell's
+/// default theme's.
+#[derive(Clone, Copy)]
+pub struct ViewTheme(pub dioxus::prelude::Signal<String>);
+
+/// `:root` with app-shell's default theme's variables.
+#[must_use]
+pub fn default_view_css() -> String {
+    format!(":root {{ {} }}", app_shell::Theme::dark().style())
+}

@@ -41,3 +41,17 @@ app-shell itself stays on the published alpha.
 ```bash
 cd crates/app-shell-extensions && cargo check --all-features && cargo nextest run
 ```
+
+## What it still takes from Architect
+
+The runtime (`architect`, `architect-extensions`,
+`architect-extensions-dioxus`, `architect-scene`), the settings model
+(`architect-settings`, no UI) and the views' contract (`architect-views`:
+`PaneHostRef`, `Meters`). Not Architect's shell, workspace, commands or UI
+kit: the palette is app-shell's (`app_shell::palette`, `PaletteSources`),
+the panes, windows and sheets app-shell's, the remote views' frame pacing
+and field focus here (`pacing`, `field_focus`), the extensions page's
+controls here (`kit`). With feature `page`, `architect-extensions/manager`
+still brings `architect-workspace` (its layouts kind reads
+`architect_workspace::home`).
+
