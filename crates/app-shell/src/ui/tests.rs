@@ -498,3 +498,58 @@ fn the_form_follows_the_width() {
     assert_eq!(FormFactor::for_width(600.0), FormFactor::Desktop);
     assert_eq!(FormFactor::for_width(1280.0), FormFactor::Desktop);
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct AroundSaw(&'static str);
+
+#[allow(non_snake_case)]
+fn HooksHarness() -> Element {
+    let layout = use_signal(|| tabs(&["a", "b"]));
+    let kinds = TabKinds::new().with(TabKind::new("v", "V", |ctx: TabCtx| {
+        // What `around` provided, read by the kind's own render.
+        let saw = try_use_context::<AroundSaw>().map_or("none", |s| s.0);
+        rsx! { "body {ctx.pane.id.0} saw {saw}" }
+    }));
+    use_context_provider(|| {
+        super::TabHooks::new()
+            .around(|_ctx| {
+                use_context_provider(|| AroundSaw("around"));
+            })
+            .header(|ctx| {
+                let id = ctx.pane.id.0.clone();
+                Some(rsx! { "header {id}" })
+            })
+            .badge(|pane| (pane.id.0 == "b").then(|| rsx! { "badge-b" }))
+    });
+    rsx! {
+        AppShell { layout, kinds, tabs: Tabs::On, form: FormFactor::Desktop }
+    }
+}
+
+#[test]
+fn tab_hooks_wrap_the_content_head_it_and_badge_the_tab() {
+    let mut dom = VirtualDom::new(HooksHarness);
+    dom.rebuild_in_place();
+    for _ in 0..3 {
+        dom.process_events();
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+    }
+    let html = dioxus_ssr::render(&dom);
+    assert!(html.contains("body a saw around"), "{html}");
+    assert!(html.contains("header a"), "{html}");
+    assert!(html.contains("badge-b"), "{html}");
+}
+
+#[test]
+fn a_panes_view_state_is_kept_without_history() {
+    let mut ws = tabs(&["a"]);
+    let a = PaneId::new("a");
+    ws.set_view_state(&a, "zoom=2".into()).unwrap();
+    let p = ws.pane(&a).unwrap();
+    assert_eq!(p.view_state, "zoom=2");
+    assert!(p.history.back.is_empty());
+    assert!(
+        ws.set_view_state(&PaneId::new("nope"), String::new())
+            .is_err()
+    );
+}

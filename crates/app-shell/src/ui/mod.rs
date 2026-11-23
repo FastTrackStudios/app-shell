@@ -36,7 +36,7 @@ pub use chrome::{
 };
 pub use foot::{Destination, PrimaryAction};
 pub use icons::{Icon, IconView, PUZZLE, named, named_icon};
-pub use kinds::{Render, TabCtx, TabKind, TabKinds};
+pub use kinds::{Render, TabCtx, TabHooks, TabKind, TabKinds};
 pub use overlay::{
     PaletteItem, Sheet, SheetContent, SheetHandle, SheetId, SheetSpec, Swipeable, ToastSpec,
     use_sheet,

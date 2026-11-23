@@ -765,6 +765,16 @@ impl Workspace {
         Ok(())
     }
 
+    /// Keeps `value` as where the pane's view is in what it shows
+    /// ([`Pane::view_state`]): no history, the same thing shown.
+    pub fn set_view_state(&mut self, pane: &PaneId, value: String) -> Result<()> {
+        let p = self
+            .pane_mut(pane)
+            .ok_or_else(|| WorkspaceError::NoSuchPane(pane.clone()))?;
+        p.view_state = value;
+        Ok(())
+    }
+
     /// Back (or, `forward`, forward) through the pane's history.
     pub fn go(&mut self, pane: &PaneId, forward: bool) -> Result<()> {
         let p = self

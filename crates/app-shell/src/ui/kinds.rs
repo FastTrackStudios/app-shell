@@ -118,3 +118,80 @@ impl TabKinds {
         self.kinds.iter()
     }
 }
+
+/// What an app (or an extension host) adds to every tab, whatever its
+/// kind: provide it in context above [`super::AppShell`].
+///
+/// - `around` is called in each tab's content component, before its
+///   kind's render, so it may use hooks there: it provides context the
+///   content reads (an extension host's handle on the pane its view is
+///   in, the view's state).
+/// - `header` draws a row above the content (the pane's toolbars), or
+///   nothing.
+/// - `menu` adds rows to a tab's context menu, after the shell's own.
+/// - `badge` draws after a tab's title (an icon, a count).
+#[derive(Clone, Default)]
+pub struct TabHooks {
+    pub around: Option<Rc<dyn Fn(&TabCtx)>>,
+    pub header: Option<Rc<dyn Fn(&TabCtx) -> Option<Element>>>,
+    pub menu: Option<Rc<dyn Fn(&Pane) -> Vec<super::popup::MenuItem>>>,
+    pub badge: Option<Rc<dyn Fn(&Pane) -> Option<Element>>>,
+}
+
+impl TabHooks {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn around(mut self, f: impl Fn(&TabCtx) + 'static) -> Self {
+        self.around = Some(Rc::new(f));
+        self
+    }
+
+    #[must_use]
+    pub fn header(mut self, f: impl Fn(&TabCtx) -> Option<Element> + 'static) -> Self {
+        self.header = Some(Rc::new(f));
+        self
+    }
+
+    #[must_use]
+    pub fn menu(mut self, f: impl Fn(&Pane) -> Vec<super::popup::MenuItem> + 'static) -> Self {
+        self.menu = Some(Rc::new(f));
+        self
+    }
+
+    #[must_use]
+    pub fn badge(mut self, f: impl Fn(&Pane) -> Option<Element> + 'static) -> Self {
+        self.badge = Some(Rc::new(f));
+        self
+    }
+}
+
+impl fmt::Debug for TabHooks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TabHooks")
+            .field("around", &self.around.is_some())
+            .field("header", &self.header.is_some())
+            .field("menu", &self.menu.is_some())
+            .field("badge", &self.badge.is_some())
+            .finish()
+    }
+}
+
+impl PartialEq for TabHooks {
+    fn eq(&self, other: &Self) -> bool {
+        fn same<T: ?Sized>(a: Option<&Rc<T>>, b: Option<&Rc<T>>) -> bool {
+            match (a, b) {
+                (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
+        }
+        same(self.around.as_ref(), other.around.as_ref())
+            && same(self.header.as_ref(), other.header.as_ref())
+            && same(self.menu.as_ref(), other.menu.as_ref())
+            && same(self.badge.as_ref(), other.badge.as_ref())
+    }
+}
