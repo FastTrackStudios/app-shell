@@ -437,7 +437,8 @@ struct App {
     desk: Rc<Desk>,
     popout: fn(WindowId) -> Element,
     popouts: HashMap<OsId, Open>,
-    /// Pop-outs closed, hidden and kept until the app ends: destroying a
+    /// Pop-outs closed, hidden (minimised on Wayland) and kept until the
+    /// app ends: destroying a
     /// window's Vulkan swapchain while the app runs crashed NVIDIA's
     /// driver (a null call in `NativeSwapchain`'s drop).
     closed: Vec<Open>,
@@ -552,7 +553,10 @@ impl App {
     fn forget(&mut self, os: OsId) {
         if let Some(open) = self.popouts.remove(&os) {
             self.desk.open.borrow_mut().retain(|(w, _)| *w != open.id);
+            // Wayland has no hiding a window: minimised, and its document
+            // stopped from drawing (its panes are gone from the layout).
             open.view.window.set_visible(false);
+            open.view.window.set_minimized(true);
             self.closed.push(open);
         }
     }
