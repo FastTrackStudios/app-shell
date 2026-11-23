@@ -105,7 +105,7 @@ const FIT_CSS: &str = "html, body { margin: 0 !important; height: auto !importan
 /// pane's height, the theme's ink and font at 13px), in the theme's
 /// variables (`set_theme_css`). Without it a view that sets no colour of
 /// its own draws black in the user agent's serif on a dark theme.
-const BASE_CSS: &str = "html, body { margin: 0; padding: 0; }                         html, body, main { height: 100%; }                         body { color: var(--ink, var(--foreground)); font-size: 13px;                         font-family: var(--font, var(--default-font-family, var(--font-sans, system-ui, sans-serif))); }";
+const BASE_CSS: &str = "html, body { margin: 0; padding: 0; }                         html, body, main { height: 100%; }                         body { color: var(--ink, var(--as-text)); font-size: 13px;                         font-family: var(--font, var(--default-font-family, var(--font-sans, system-ui, sans-serif))); }";
 
 /// Another extension's view a remote view holds, as its placeholder says.
 #[derive(Clone, Debug, Default)]

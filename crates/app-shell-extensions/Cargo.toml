@@ -29,7 +29,7 @@ remote = [
 ]
 # The extensions page (`page`): search, install with consent, update, pin,
 # grants and logs.
-page = ["architect-extensions/manager", "dep:architect-ui"]
+page = ["architect-extensions/manager"]
 # The platform's file pickers: the portal on Linux, the system's panels on
 # macOS and Windows (`rfd`), the document and photo pickers on iOS.
 pickers = [
@@ -48,13 +48,12 @@ app-shell = { path = "../app-shell", features = ["icons"] }
 architect = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["action-list"] }
 architect-extensions = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["host", "linked", "dioxus", "uikit"] }
 architect-extensions-dioxus = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["process"] }
-architect-settings = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui"] }
+architect-settings = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
 architect-shell = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui"] }
 architect-workspace = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["ui", "paint-ui"] }
 architect-theme = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", features = ["dioxus"] }
 architect-views = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
 architect-scene = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework" }
-architect-ui = { git = "https://github.com/FastTrackStudios/architect", branch = "strip/application-framework", optional = true }
 dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41", default-features = false, features = ["lib"] }
 futures = "0.3"
 semver = "1"

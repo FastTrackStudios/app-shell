@@ -305,6 +305,8 @@ fn colour(value: &str, fallback: &str) -> String {
         fallback.to_owned()
     } else if value.starts_with('#') || value.contains('(') {
         value.to_owned()
+    } else if let Some(v) = crate::theme_ui::token_var(value) {
+        v.to_owned()
     } else {
         format!("var(--{value}, {fallback})")
     }

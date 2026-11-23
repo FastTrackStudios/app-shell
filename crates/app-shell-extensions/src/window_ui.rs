@@ -14,9 +14,9 @@
 //! Either way the view is drawn as any of its views is ([`ExtensionView`]:
 //! linked in, a process's or a WASI component's remote document, a page).
 //!
-//! [`use_settings_window`] joins the app's settings (`architect_settings`'s
-//! [`SettingsHandle`]) to the settings extension's window: the app's own
-//! sections as its items of `settings.sections`, `SettingsHandle::show`
+//! [`use_settings_window`] joins the app's settings (`crate::settings`'s
+//! [`Settings`](crate::settings::Settings)) to the settings extension's window: the app's own
+//! sections as its items of `settings.sections`, `Settings::show`
 //! opening the window that `APP_SETTINGS` opens, its closing closing the
 //! page, and the values for a sheet drawn out of process
 //! (`APP_SETTINGS_VALUES`, `APP_SETTINGS_SET`).
@@ -24,10 +24,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::settings::{
+    Owner, json_of as setting_json, try_use_settings, value_of as setting_value,
+};
 use app_shell::ui::SheetSpec;
 use app_shell::{Pane, PaneId, Rect, Target};
 use architect::action::{ActionCaller, ActionError, ActionFuture, ActionInfo, Effect};
-use architect_settings::{Owner, try_use_settings};
 use dioxus::prelude::*;
 use futures::StreamExt as _;
 use futures::channel::mpsc;
@@ -240,29 +242,6 @@ pub(crate) fn use_window_panes(ui: ExtensionUi) {
 
 // ---- the settings page's window ---------------------------------------
 
-/// A JSON value as a setting's.
-fn setting_value(v: &Value) -> Option<architect_settings::Value> {
-    match v {
-        Value::Bool(b) => Some(architect_settings::Value::Bool(*b)),
-        Value::Number(n) => n
-            .as_i64()
-            .map(architect_settings::Value::Int)
-            .or_else(|| n.as_f64().map(architect_settings::Value::Float)),
-        Value::String(t) => Some(architect_settings::Value::Text(t.clone())),
-        _ => None,
-    }
-}
-
-/// A setting's value as JSON.
-fn setting_json(v: &architect_settings::Value) -> Value {
-    match v {
-        architect_settings::Value::Bool(b) => json!(b),
-        architect_settings::Value::Int(i) => json!(i),
-        architect_settings::Value::Float(f) => json!(f),
-        architect_settings::Value::Text(t) => json!(t),
-    }
-}
-
 /// What a settings sheet out of process reads and writes: every setting's
 /// value now, and the writes it asked for.
 #[derive(Default)]
@@ -289,7 +268,7 @@ fn info(id: &str, name: &str, effect: Effect, description: &str, params: &str) -
 }
 
 /// Joins the app's settings to the settings extension's window: call it
-/// where the app's [`SettingsHandle`] and `host` are (`use_extension_ui`
+/// where the app's [`Settings`](crate::settings::Settings) and `host` are (`use_extension_ui`
 /// does). Without a settings handle in context it does nothing.
 pub(crate) fn use_settings_window(host: &Host, open: Signal<Vec<OpenWindow>>) {
     let handle = try_use_settings();
@@ -310,7 +289,7 @@ pub(crate) fn use_settings_window(host: &Host, open: Signal<Vec<OpenWindow>>) {
                 .filter_map(|s| {
                     serde_json::to_value(architect_extensions::manifest::decl_of(
                         s,
-                        pages.contains_key(&s.id),
+                        pages.contains(&s.id),
                     ))
                     .ok()
                 })
@@ -416,7 +395,7 @@ pub(crate) fn use_settings_window(host: &Host, open: Signal<Vec<OpenWindow>>) {
             );
         });
     }
-    // `SettingsHandle::show` (a search hit, the manager's MANAGER_SHOW)
+    // `Settings::show` (a search hit, the manager's MANAGER_SHOW)
     // opens the window `APP_SETTINGS` opens; closing it closes the page.
     {
         let host = host.clone();

@@ -96,7 +96,7 @@ fn a_badged_file_tree_row_draws_its_icon_and_badge() {
         "{html}"
     );
     assert!(html.contains(">3</span>"), "{html}");
-    assert!(html.contains("var(--primary)"), "{html}");
+    assert!(html.contains("var(--as-accent)"), "{html}");
     let path = golden("badged-file-row.html");
     if std::env::var("ARCHITECT_GOLDEN").as_deref() == Ok("record") {
         std::fs::write(&path, &html).unwrap();

@@ -346,12 +346,12 @@ pub fn use_extension_ui(host: Host, layout: Signal<Workspace>) -> ExtensionUi {
     crate::window_ui::use_window_panes(ui);
     crate::window_ui::set_main(ui);
     // The settings page is the settings extension's window: the app's
-    // sections and values to it, `SettingsHandle::show` opening it.
+    // sections and values to it, `Settings::show` opening it.
     crate::window_ui::use_settings_window(&host, windows);
     // The settings page draws an extension's section from its view
     // (`[[sections]] view`), a linked one's component as it is.
     use_context_provider(move || {
-        architect_settings::SectionViews(Rc::new(move |kind: &str| {
+        crate::settings::SectionViews(Rc::new(move |kind: &str| {
             let (extension, view) = kind.split_once('/')?;
             let host = ui.host();
             if let Some(root) = host.linked_view(extension, view) {
@@ -506,14 +506,14 @@ pub fn ExtensionOverlays(ui: ExtensionUi) -> Element {
                         onclick: move |_| if popup { ui.close_layer(&close) },
                         div {
                             style: "position: relative; width: {w}px; height: {h}px; display: flex; flex-direction: column; \
-                                    border-radius: 12px; overflow: hidden; background: var(--card); \
-                                    border: 1px solid var(--border); box-shadow: 0 16px 44px rgba(0,0,0,0.5);",
+                                    border-radius: 12px; overflow: hidden; background: var(--as-surface); \
+                                    border: 1px solid var(--as-border); box-shadow: 0 16px 44px rgba(0,0,0,0.5);",
                             onclick: move |e| e.stop_propagation(),
                             div { style: "display: flex; align-items: center; height: 32px; padding: 0 10px; \
-                                          font-size: 12px; color: var(--muted-foreground); border-bottom: 1px solid var(--border);",
+                                          font-size: 12px; color: var(--as-muted); border-bottom: 1px solid var(--as-border);",
                                 span { style: "flex: 1;", "{open.title}" }
                                 button {
-                                    style: "border: none; background: transparent; color: var(--muted-foreground);",
+                                    style: "border: none; background: transparent; color: var(--as-muted);",
                                     "aria-label": "Close",
                                     onclick: {
                                         let k = kind;
@@ -624,7 +624,7 @@ pub fn ExtensionView(
         let name = extension;
         return rsx! {
             div { style: "{size} display: flex; align-items: center; justify-content: center; padding: 24px; \
-                          font-size: 13px; color: var(--muted-foreground); text-align: center;",
+                          font-size: 13px; color: var(--as-muted); text-align: center;",
                 "{name} is not loaded: its view comes back when it does."
             }
         };
@@ -646,7 +646,7 @@ pub fn ExtensionView(
             || {
                 rsx! {
                     div { style: "flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; \
-                                  font-size: 13px; color: var(--muted-foreground); text-align: center;",
+                                  font-size: 13px; color: var(--as-muted); text-align: center;",
                         "This app has no web view host, so {extension}'s web view cannot be shown here."
                     }
                 }
@@ -673,7 +673,7 @@ pub fn ExtensionView(
                 let why = no_process_views(&host.platform());
                 rsx! {
                     div { style: "flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; \
-                                  font-size: 13px; color: var(--muted-foreground); text-align: center;",
+                                  font-size: 13px; color: var(--as-muted); text-align: center;",
                         "{extension}'s view {view} cannot be shown here: {why}."
                     }
                 }
@@ -789,7 +789,7 @@ pub fn ExtensionView(
         };
     }
     rsx! {
-        div { style: "padding: 24px; font-size: 13px; color: var(--muted-foreground);",
+        div { style: "padding: 24px; font-size: 13px; color: var(--as-muted);",
             "{extension}'s view {view} is drawn by its process, which this app does not show."
         }
     }

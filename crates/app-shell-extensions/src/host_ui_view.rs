@@ -422,10 +422,10 @@ fn layer_look(t: &crate::theme_ui::ChromeTheme) -> String {
 
 fn kind_colour(kind: &str) -> &'static str {
     match kind {
-        "success" => "var(--primary)",
+        "success" => "var(--as-accent)",
         "warning" => "var(--warning, #d97706)",
-        "error" => "var(--destructive)",
-        _ => "var(--border)",
+        "error" => "var(--as-danger)",
+        _ => "var(--as-border)",
     }
 }
 
@@ -437,18 +437,18 @@ fn ToastRow(ui: WindowUi, toast: Toast) -> Element {
     rsx! {
         div {
             style: "display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; \
-                    background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); \
+                    background: var(--as-surface); color: var(--as-text); border: 1px solid var(--as-border); \
                     border-left: 3px solid {edge}; box-shadow: 0 8px 24px rgba(0,0,0,0.35); font-size: 13px;",
             role: "status",
             "data-ext-toast": "{n.kind}",
             div { style: "flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;",
-                div { style: "font-size: 11px; color: var(--muted-foreground);",
+                div { style: "font-size: 11px; color: var(--as-muted);",
                     {n.title.clone().unwrap_or_else(|| n.from.name.clone())}
                 }
                 div { "{n.text}" }
             }
             button {
-                style: "border: none; background: transparent; color: var(--muted-foreground); cursor: pointer;",
+                style: "border: none; background: transparent; color: var(--as-muted); cursor: pointer;",
                 "aria-label": "Dismiss",
                 onclick: move |_| ui.dismiss(id),
                 "✕"
@@ -457,10 +457,10 @@ fn ToastRow(ui: WindowUi, toast: Toast) -> Element {
     }
 }
 
-const BUTTON: &str = "padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); \
-                      background: var(--secondary); color: var(--secondary-foreground); cursor: pointer; font-size: 13px;";
-const PRIMARY: &str = "padding: 6px 14px; border-radius: 6px; border: 1px solid var(--primary); \
-                       background: var(--primary); color: var(--primary-foreground); cursor: pointer; font-size: 13px;";
+const BUTTON: &str = "padding: 6px 14px; border-radius: 6px; border: 1px solid var(--as-border); \
+                      background: var(--as-raised); color: var(--as-text); cursor: pointer; font-size: 13px;";
+const PRIMARY: &str = "padding: 6px 14px; border-radius: 6px; border: 1px solid var(--as-accent); \
+                       background: var(--as-accent); color: var(--as-accent-text); cursor: pointer; font-size: 13px;";
 
 #[component]
 fn PromptDialog(ui: WindowUi, id: u64, from: String, prompt: Prompt, look: String) -> Element {
@@ -493,8 +493,8 @@ fn PromptDialog(ui: WindowUi, id: u64, from: String, prompt: Prompt, look: Strin
             onclick: move |_| on_backdrop(),
             div {
                 style: "width: 420px; max-width: calc(100% - 32px); display: flex; flex-direction: column; gap: 12px; \
-                        padding: 18px; border-radius: 12px; background: var(--card); color: var(--card-foreground); \
-                        border: 1px solid var(--border); box-shadow: 0 16px 44px rgba(0,0,0,0.5);",
+                        padding: 18px; border-radius: 12px; background: var(--as-surface); color: var(--as-text); \
+                        border: 1px solid var(--as-border); box-shadow: 0 16px 44px rgba(0,0,0,0.5);",
                 role: "dialog",
                 "aria-modal": "true",
                 "data-ext-prompt": "{prompt_kind(prompt.kind)}",
@@ -504,10 +504,10 @@ fn PromptDialog(ui: WindowUi, id: u64, from: String, prompt: Prompt, look: Strin
                     Key::Named(NamedKey::Enter) if prompt.kind != PromptKind::PickOne => on_enter(),
                     _ => {}
                 },
-                div { style: "font-size: 11px; color: var(--muted-foreground);", "{from}" }
+                div { style: "font-size: 11px; color: var(--as-muted);", "{from}" }
                 div { style: "font-size: 15px; font-weight: 600;", "{prompt.title}" }
                 if let Some(message) = &prompt.message {
-                    div { style: "font-size: 13px; color: var(--muted-foreground);", "{message}" }
+                    div { style: "font-size: 13px; color: var(--as-muted);", "{message}" }
                 }
                 if matches!(prompt.kind, PromptKind::Text | PromptKind::Secret) {
                     div { style: "position: relative; display: flex; flex-direction: column;",
@@ -526,7 +526,7 @@ fn PromptDialog(ui: WindowUi, id: u64, from: String, prompt: Prompt, look: Strin
                             div {
                                 style: "position: absolute; left: 11px; top: 0; bottom: 0; display: flex; \
                                         align-items: center; pointer-events: none; font-size: 13px; \
-                                        letter-spacing: 1px; color: var(--foreground);",
+                                        letter-spacing: 1px; color: var(--as-text);",
                                 {MASK.to_string().repeat(text.read().chars().count())}
                             }
                         }
@@ -554,12 +554,12 @@ fn PromptDialog(ui: WindowUi, id: u64, from: String, prompt: Prompt, look: Strin
 const MASK: char = '•';
 
 /// A prompt's text field.
-const FIELD: &str = "padding: 7px 10px; border-radius: 6px; border: 1px solid var(--input); \
-                     background: var(--background); color: var(--foreground); font-size: 13px;";
+const FIELD: &str = "padding: 7px 10px; border-radius: 6px; border: 1px solid var(--as-border); \
+                     background: var(--as-bg); color: var(--as-text); font-size: 13px;";
 /// A secret's: its text not drawn.
-const SECRET_FIELD: &str = "padding: 7px 10px; border-radius: 6px; border: 1px solid var(--input); \
-                            background: var(--background); color: transparent; \
-                            caret-color: var(--foreground); font-size: 13px;";
+const SECRET_FIELD: &str = "padding: 7px 10px; border-radius: 6px; border: 1px solid var(--as-border); \
+                            background: var(--as-bg); color: transparent; \
+                            caret-color: var(--as-text); font-size: 13px;";
 
 const fn prompt_kind(kind: PromptKind) -> &'static str {
     match kind {
@@ -576,13 +576,13 @@ fn ChoiceRow(ui: WindowUi, id: u64, choice: Choice) -> Element {
     rsx! {
         button {
             style: "display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; \
-                    border-radius: 6px; border: 1px solid var(--border); background: var(--background); \
-                    color: var(--foreground); cursor: pointer; text-align: left; font-size: 13px;",
+                    border-radius: 6px; border: 1px solid var(--as-border); background: var(--as-bg); \
+                    color: var(--as-text); cursor: pointer; text-align: left; font-size: 13px;",
             "data-choice": "{choice.id}",
             onclick: move |_| ui.answer(id, Some(Value::String(chosen.clone()))),
             span { "{choice.label}" }
             if let Some(detail) = &choice.detail {
-                span { style: "font-size: 11px; color: var(--muted-foreground);", "{detail}" }
+                span { style: "font-size: 11px; color: var(--as-muted);", "{detail}" }
             }
         }
     }
@@ -614,8 +614,8 @@ fn MenuAt(ui: WindowUi, id: u64, menu: Menu, look: String) -> Element {
             },
             div {
                 style: "position: absolute; {place} min-width: 180px; padding: 4px; display: flex; flex-direction: column; \
-                        border-radius: 8px; background: var(--popover); color: var(--popover-foreground); \
-                        border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,0.45); font-size: 13px;",
+                        border-radius: 8px; background: var(--as-surface); color: var(--as-text); \
+                        border: 1px solid var(--as-border); box-shadow: 0 10px 30px rgba(0,0,0,0.45); font-size: 13px;",
                 role: "menu",
                 "data-ext-menu": "{menu.items.len()}",
                 onclick: move |e| e.stop_propagation(),
@@ -630,12 +630,12 @@ fn MenuAt(ui: WindowUi, id: u64, menu: Menu, look: String) -> Element {
 #[component]
 fn MenuRow(ui: WindowUi, id: u64, item: MenuItem) -> Element {
     if item.separator {
-        return rsx! { div { style: "height: 1px; margin: 4px 6px; background: var(--border);" } };
+        return rsx! { div { style: "height: 1px; margin: 4px 6px; background: var(--as-border);" } };
     }
     let chosen = item.id.clone();
     let disabled = item.disabled;
     let ink = if disabled {
-        "var(--muted-foreground)"
+        "var(--as-muted)"
     } else {
         "inherit"
     };
@@ -652,7 +652,7 @@ fn MenuRow(ui: WindowUi, id: u64, item: MenuItem) -> Element {
             }
             span { style: "flex: 1;", "{item.label}" }
             if let Some(keys) = &item.shortcut {
-                span { style: "font-size: 11px; color: var(--muted-foreground);", "{keys}" }
+                span { style: "font-size: 11px; color: var(--as-muted);", "{keys}" }
             }
         }
     }
@@ -724,7 +724,9 @@ pub fn Decorations(host: Host, target: Target) -> Element {
 
 /// A theme token's colour (`primary`), or the CSS colour given.
 fn colour(c: &str) -> String {
-    if c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '-') {
+    if let Some(v) = crate::theme_ui::token_var(c) {
+        v.to_owned()
+    } else if c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '-') {
         format!("var(--{c})")
     } else {
         c.to_owned()
@@ -736,9 +738,9 @@ fn Decorated(from: String, decoration: architect_extensions::hostcall::Decoratio
     let tip = decoration.tooltip.clone().unwrap_or_default();
     let fill = colour(decoration.color.as_deref().unwrap_or("secondary"));
     let ink = if decoration.color.is_some() {
-        "var(--primary-foreground)"
+        "var(--as-accent-text)"
     } else {
-        "var(--secondary-foreground)"
+        "var(--as-text)"
     };
     rsx! {
         span {

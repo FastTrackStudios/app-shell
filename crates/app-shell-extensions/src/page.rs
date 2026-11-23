@@ -32,7 +32,12 @@
     clippy::needless_pass_by_value
 )]
 
-use architect_ui::prelude::*;
+use crate::kit::{
+    Alert, AlertDescription, AlertTitle, AlertVariant, Badge, BadgeVariant, Button, ButtonSize,
+    ButtonVariant, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
+    EmptyState, Input, KeyValueRow, ListRow, NativeSelect, NativeSelectOption, SectionHeader,
+    SegmentedControl, Switch,
+};
 use dioxus::prelude::*;
 use semver::VersionReq;
 
@@ -108,7 +113,7 @@ pub fn use_manager_page(manager: Manager, browse: Browse) {
         asking: Signal::new(None),
         note: Signal::new(None),
     });
-    let settings = architect_settings::try_use_settings();
+    let settings = crate::settings::try_use_settings();
     let shown = use_hook(|| std::rc::Rc::new(std::cell::RefCell::new(Some(manager.shown()))));
     use_future(move || {
         let shown = shown.borrow_mut().take();
@@ -136,7 +141,7 @@ pub fn ManagerSection() -> Element {
 /// What stays above the list's scrolled-out rows: Blitz clips what a
 /// scroller draws, not what it hit-tests, so a row scrolled up under the
 /// search field would take its clicks (`skills/architect/references/blitz-quirks.md`).
-const LIFT: &str = "position: relative; z-index: 1; background: var(--background);";
+const LIFT: &str = "position: relative; z-index: 1; background: var(--as-bg);";
 
 /// Below this width (CSS px) the manager in a pane shows the list or one
 /// item's page, not both.
@@ -170,7 +175,7 @@ pub fn ManagerView() -> Element {
     let narrow = width().is_some_and(|w| w < NARROW);
     rsx! {
         div {
-            style: "height: 100%; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; padding: 12px 14px; background: var(--background); color: var(--foreground);",
+            style: "height: 100%; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; padding: 12px 14px; background: var(--as-bg); color: var(--as-text);",
             onmounted: move |e| mounted.set(Some(e.data())),
             ManagerPage { manager, fill: true, narrow }
         }
@@ -222,14 +227,14 @@ pub fn ManagerPage(
             "flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px;",
             "flex: 1; min-height: 0; display: flex; gap: 16px;",
             "flex: 0 0 300px; min-height: 0; display: flex; flex-direction: column; gap: 8px;",
-            "flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px;",
+            "flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; border: 1px solid var(--as-border); border-radius: 10px;",
             "flex: 1; min-width: 0; min-height: 0; overflow-y: auto;",
         ),
         (true, true) => (
             "flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px;",
             "flex: 1; min-height: 0; display: flex; flex-direction: column;",
             "flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px;",
-            "flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px;",
+            "flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; border: 1px solid var(--as-border); border-radius: 10px;",
             "flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;",
         ),
         // In the parent's scroll: no scroller of its own (a scroller inside
@@ -239,15 +244,14 @@ pub fn ManagerPage(
             "display: flex; flex-direction: column; gap: 14px;",
             "display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;",
             "flex: 1 1 260px; max-width: 360px; display: flex; flex-direction: column; gap: 8px;",
-            "display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px;",
+            "display: flex; flex-direction: column; border: 1px solid var(--as-border); border-radius: 10px;",
             "flex: 999 1 380px; min-width: 0;",
         ),
     };
     let show_list = !master_detail || picked.is_none();
     let show_page = !master_detail || picked.is_some();
     rsx! {
-        style { {architect_ui::UTILITIES_CSS} }
-        div { style: "{root} font-family: inherit; color: var(--foreground);",
+        div { style: "{root} font-family: inherit; color: var(--as-text);",
             if let (Some(asking), Some(browse)) = ((s.asking)(), browse.clone()) {
                 div { style: "{LIFT} flex: none;",
                     ConsentPrompt {
@@ -286,7 +290,7 @@ pub fn ManagerPage(
                         div { style: "{LIFT} flex: none;",
                             Input { value: s.query, placeholder: "Search every kind".to_owned() }
                         }
-                        div { style: "{LIFT} flex: none; font-size: 12px; color: var(--muted-foreground);",
+                        div { style: "{LIFT} flex: none; font-size: 12px; color: var(--as-muted);",
                             "{items.len()} item(s) · by name, kind, source"
                         }
                         // A new list (a scroller at its top) for each search
@@ -361,9 +365,13 @@ fn ItemRow(on: bool, item: Item) -> Element {
     if !item.problems.is_empty() {
         let _ = write!(detail, " · {} problem(s)", item.problems.len());
     }
-    let ground = if on { "background: var(--accent);" } else { "" };
+    let ground = if on {
+        "background: var(--as-selected);"
+    } else {
+        ""
+    };
     rsx! {
-        div { style: "{ground} border-bottom: 1px solid var(--border);",
+        div { style: "{ground} border-bottom: 1px solid var(--as-border);",
             ListRow {
                 label: item.name.clone(),
                 detail,
@@ -448,7 +456,7 @@ fn ItemPage(manager: Manager, kind: String, id: String) -> Element {
                 Section { key: "{part.title}", title: part.title.clone(),
                     if part.lines.is_empty() { Muted { text: "Nothing yet.".to_owned() } }
                     for (i, line) in part.lines.iter().enumerate() {
-                        div { key: "{i}", style: "font-size: 12px; color: var(--foreground); white-space: pre-wrap; font-family: ui-monospace, monospace;", "{line}" }
+                        div { key: "{i}", style: "font-size: 12px; color: var(--as-text); white-space: pre-wrap; font-family: ui-monospace, monospace;", "{line}" }
                     }
                 }
             }
@@ -704,7 +712,7 @@ fn Detail(browse: Browse, row: Row) -> Element {
             Section { title: "Recent log",
                 if logs.is_empty() { Muted { text: "Nothing logged yet.".to_owned() } }
                 for (i, l) in logs.iter().enumerate() {
-                    div { key: "{i}", style: "font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted-foreground);",
+                    div { key: "{i}", style: "font-family: ui-monospace, monospace; font-size: 11px; color: var(--as-muted);",
                         "{l.level.name()} {l.source}: {l.text}"
                     }
                 }
@@ -852,7 +860,7 @@ fn PinPicker(
     let value = use_signal(|| pin.clone().unwrap_or_default());
     rsx! {
         div { style: "display: flex; align-items: center; gap: 8px; margin-top: 6px;",
-            span { style: "font-size: 12px; color: var(--muted-foreground);", "Pin to" }
+            span { style: "font-size: 12px; color: var(--as-muted);", "Pin to" }
             NativeSelect { value,
                 on_change: move |e: FormEvent| {
                     let v = e.value();
@@ -885,7 +893,7 @@ fn GrantLine(
     };
     rsx! {
         div { style: "display: flex; align-items: center; gap: 8px; padding-top: 6px;",
-            span { style: "flex: 1; font-size: 12px; color: var(--muted-foreground);",
+            span { style: "flex: 1; font-size: 12px; color: var(--as-muted);",
                 "Granted {where_} at {grant.version} by {grant.by}"
             }
             Button { variant: ButtonVariant::Outline, size: ButtonSize::Small,
@@ -1056,7 +1064,7 @@ fn RegistriesPanel(browse: Browse) -> Element {
 #[component]
 fn Section(title: String, children: Element) -> Element {
     rsx! {
-        div { style: "display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--card);",
+        div { style: "display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--as-border); border-radius: 10px; background: var(--as-surface);",
             SectionHeader { label: title }
             {children}
         }
@@ -1065,12 +1073,12 @@ fn Section(title: String, children: Element) -> Element {
 
 #[component]
 fn Line(text: String) -> Element {
-    rsx! { div { style: "font-size: 13px; color: var(--foreground);", "{text}" } }
+    rsx! { div { style: "font-size: 13px; color: var(--as-text);", "{text}" } }
 }
 
 #[component]
 fn Muted(text: String) -> Element {
-    rsx! { div { style: "font-size: 12px; color: var(--muted-foreground);", "{text}" } }
+    rsx! { div { style: "font-size: 12px; color: var(--as-muted);", "{text}" } }
 }
 
 #[component]
@@ -1109,7 +1117,7 @@ pub fn ConsentPrompt(
     // scrolling section is clipped by it (Blitz).
     rsx! {
         div { style: "display: flex; justify-content: center;",
-            div { style: "width: 560px; max-width: 100%; border: 2px solid var(--primary); border-radius: 14px;",
+            div { style: "width: 560px; max-width: 100%; border: 2px solid var(--as-accent); border-radius: 14px;",
                 Card {
                     CardHeader {
                         CardTitle { "{action} {names.join(\", \")}?" }
@@ -1125,16 +1133,16 @@ pub fn ConsentPrompt(
                                     for ask in p.needs_consent.iter().chain(p.asks.iter().filter(|a| p.needs_consent.is_empty() && !a.says.is_empty())) {
                                         div { key: "{ask.kind}{ask.what}", style: "font-size: 13px;", "• {ask.says}" }
                                     }
-                                    div { style: "font-size: 12px; color: var(--muted-foreground);",
+                                    div { style: "font-size: 12px; color: var(--as-muted);",
                                         "Runs as {p.runner}. Kind {p.kind}, from {p.location}."
                                     }
                                     if !p.hooks.is_empty() {
-                                        div { style: "font-size: 12px; color: var(--muted-foreground);", "Runs on: {p.hooks.join(\", \")}" }
+                                        div { style: "font-size: 12px; color: var(--as-muted);", "Runs on: {p.hooks.join(\", \")}" }
                                     }
                                 }
                             }
                             div { style: "display: flex; align-items: center; gap: 10px;",
-                                span { style: "font-size: 12px; color: var(--muted-foreground);", "Allow on" }
+                                span { style: "font-size: 12px; color: var(--as-muted);", "Allow on" }
                                 SegmentedControl { value: scope(), options, on_change: move |v: String| scope.set(v) }
                             }
                         }
@@ -1237,12 +1245,12 @@ pub fn MissingExtensions(
     let frame = if bare {
         ""
     } else {
-        "padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--card-foreground);"
+        "padding: 10px 12px; border: 1px solid var(--as-border); border-radius: 10px; background: var(--as-surface); color: var(--as-text);"
     };
     // Inline styles over the theme's tokens, and no `style` node: one
     // here made Blitz panic (`layout_parent … does not point at its layout
     // container`) beside the workspace. The consent prompt's classes are
-    // the app's to load (`document::Style` of `architect_ui::UTILITIES_CSS`).
+    // inline too (`crate::kit`).
     rsx! {
         div {
             role: "alert",
@@ -1253,19 +1261,19 @@ pub fn MissingExtensions(
                 for (id, name, tag, detail) in rows {
                     div { key: "{id}", style: "display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 8px; flex-shrink: 0;",
                         span { style: "font-weight: 500;", "{name}" }
-                        span { style: "font-size: 11px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted-foreground);", "{tag}" }
-                        span { style: "color: var(--muted-foreground);", "{detail}" }
+                        span { style: "font-size: 11px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--as-border); color: var(--as-muted);", "{tag}" }
+                        span { style: "color: var(--as-muted);", "{detail}" }
                     }
                 }
             }
             if let Some(n) = note() {
-                div { style: "font-size: 12px; color: var(--muted-foreground);", "{n}" }
+                div { style: "font-size: 12px; color: var(--as-muted);", "{n}" }
             }
             if can_install || on_dismiss.is_some() {
                 div { style: "display: flex; gap: 8px; padding-top: 2px;",
                     if can_install {
                     button {
-                        style: "padding: 5px 12px; border-radius: 8px; border: none; background: var(--primary); color: var(--primary-foreground); font-size: 13px; font-weight: 600; cursor: pointer;",
+                        style: "padding: 5px 12px; border-radius: 8px; border: none; background: var(--as-accent); color: var(--as-accent-text); font-size: 13px; font-weight: 600; cursor: pointer;",
                         onclick: move |_| {
                             // Read (fetched, verified) on a thread of its
                             // own, never the window's.
@@ -1295,8 +1303,8 @@ pub fn MissingExtensions(
                     }
                     if let Some(dismiss) = on_dismiss {
                         button {
-                            style: "padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border); background: transparent; \
-                                    color: var(--card-foreground); font-size: 13px; font-weight: 500; cursor: pointer;",
+                            style: "padding: 5px 12px; border-radius: 8px; border: 1px solid var(--as-border); background: transparent; \
+                                    color: var(--as-text); font-size: 13px; font-weight: 500; cursor: pointer;",
                             onclick: move |_| dismiss.call(()),
                             "Not now"
                         }

@@ -3,14 +3,16 @@
 //! A [`Host`](architect_extensions::host::Host) is `Send`; the page's registry is a
 //! signal of the window's. [`use_extension_sections`] is the bridge: a
 //! [`SectionSink`] the host writes to from any thread, whose changes the
-//! window applies to `architect-settings`' registry — an extension's
+//! window applies to the settings' registry (`crate::settings`) — an extension's
 //! sections come when it loads, change when it reloads (values kept), and
 //! go when it unloads.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use architect_settings::{Section, try_use_settings};
+use crate::settings::{
+    Section, json_of as setting_json, try_use_settings, value_of as setting_value,
+};
 use dioxus::prelude::*;
 use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
@@ -40,7 +42,7 @@ impl SectionSink for UiSections {
     }
 }
 
-/// The settings page above (`use_settings_provider`), as a host's
+/// The settings page above (`crate::settings::use_settings`), as a host's
 /// [`SectionSink`]: give it to `Host::new`.
 #[must_use = "give it to `Host::new`"]
 pub fn use_extension_sections() -> UiSections {
@@ -117,28 +119,6 @@ impl architect_extensions::hostapi::SettingValues for PageValues {
     }
 }
 
-/// A JSON value as a setting's.
-fn setting_value(v: &serde_json::Value) -> Option<architect_settings::Value> {
-    match v {
-        serde_json::Value::Bool(b) => Some(architect_settings::Value::Bool(*b)),
-        serde_json::Value::Number(n) => n
-            .as_i64()
-            .map(architect_settings::Value::Int)
-            .or_else(|| n.as_f64().map(architect_settings::Value::Float)),
-        serde_json::Value::String(t) => Some(architect_settings::Value::Text(t.clone())),
-        _ => None,
-    }
-}
-
-fn setting_json(v: &architect_settings::Value) -> serde_json::Value {
-    match v {
-        architect_settings::Value::Bool(b) => serde_json::Value::Bool(*b),
-        architect_settings::Value::Int(i) => serde_json::json!(i),
-        architect_settings::Value::Float(f) => serde_json::json!(f),
-        architect_settings::Value::Text(t) => serde_json::Value::String(t.clone()),
-    }
-}
-
 /// The settings page above's values of extensions' settings, for a host
 /// (`Host::with_setting_values`): kept in step with the page as it
 /// changes, a host's writes set on the page.
@@ -154,7 +134,7 @@ pub fn use_page_setting_values() -> PageValues {
         let now = h.values.read();
         let mut out = std::collections::BTreeMap::new();
         for section in registry.sections() {
-            if !matches!(section.owner, architect_settings::Owner::Extension(_)) {
+            if !matches!(section.owner, crate::settings::Owner::Extension(_)) {
                 continue;
             }
             for setting in section.settings() {

@@ -65,3 +65,26 @@ pub const THEME: ChromeTheme = ChromeTheme {
 pub const fn shell_theme() -> ChromeTheme {
     THEME
 }
+
+/// A theme token's name as an extension writes it (`primary`, `accent`,
+/// `destructive`, `muted-foreground`) as app-shell's CSS variable;
+/// `None` for one app-shell has no counterpart of.
+#[must_use]
+pub fn token_var(token: &str) -> Option<&'static str> {
+    Some(match token {
+        "primary" | "accent" | "ring" => "var(--as-accent)",
+        "primary-foreground" | "accent-foreground" | "destructive-foreground" => {
+            "var(--as-accent-text)"
+        }
+        "secondary" | "muted" => "var(--as-raised)",
+        "secondary-foreground" | "foreground" | "card-foreground" | "popover-foreground" => {
+            "var(--as-text)"
+        }
+        "muted-foreground" => "var(--as-muted)",
+        "destructive" | "danger" => "var(--as-danger)",
+        "border" | "input" => "var(--as-border)",
+        "background" => "var(--as-bg)",
+        "card" | "popover" => "var(--as-surface)",
+        _ => return None,
+    })
+}
