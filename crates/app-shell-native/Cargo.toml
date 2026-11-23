@@ -31,7 +31,7 @@ futures-channel = "0.3"
 # them: `asset!()` files from the app's bundle, the rest over the network.
 blitz-traits = "=0.3.0-beta.4"
 blitz-net = "=0.3.0-beta.4"
-dioxus-asset-resolver = "=0.8.0-alpha.3"
+dioxus-asset-resolver = { version = "=0.8.0-alpha.3", features = ["native"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 # Shots (src/shot.rs): the window's document painted again on the CPU, as
 # a PNG. The versions dioxus-native's blitz pins.
