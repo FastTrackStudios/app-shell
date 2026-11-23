@@ -54,6 +54,7 @@ use dioxus_native::winit::platform::macos::ApplicationHandlerExtMacOS;
 
 pub mod net;
 pub mod shot;
+pub mod telemetry;
 
 pub use dioxus_native::winit;
 
