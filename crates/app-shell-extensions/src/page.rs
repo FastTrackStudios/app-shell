@@ -1363,3 +1363,40 @@ pub fn MissingExtensions(
         }
     }
 }
+
+/// The extensions manager with its page: `ManagerExtension`'s actions
+/// (`MANAGER_*`) and its views, `manager` (this page) and `section` (one
+/// of its sections). Link it in place of `ManagerExtension`.
+#[derive(Clone, Debug)]
+pub struct ManagerUi(pub architect_extensions::manager::extension::ManagerExtension);
+
+impl architect_extensions::linked::Extension for ManagerUi {
+    fn manifest(&self) -> &'static str {
+        self.0.manifest()
+    }
+
+    fn build(&self, ext: &mut architect_extensions::linked::Builder) {
+        use architect_extensions_dioxus::BuilderExt as _;
+        self.0.build(ext);
+        ext.view("manager", ManagerView)
+            .view("section", ManagerSection);
+    }
+}
+
+#[cfg(test)]
+mod manager_ui_tests {
+    use architect_extensions::linked::Builder;
+    use architect_extensions::manager::Manager;
+    use architect_extensions::manager::extension::ManagerExtension;
+
+    use super::ManagerUi;
+
+    #[test]
+    fn the_manager_brings_its_page_and_its_section_as_views() {
+        let built = Builder::of(&ManagerUi(ManagerExtension::new(Manager::new())));
+        let views = built.view_ids();
+        assert!(views.iter().any(|v| v == "manager"), "{views:?}");
+        assert!(views.iter().any(|v| v == "section"), "{views:?}");
+        assert!(built.action_ids().iter().any(|a| a == "MANAGER_LIST"));
+    }
+}
