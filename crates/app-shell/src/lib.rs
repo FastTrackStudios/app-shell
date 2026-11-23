@@ -27,6 +27,7 @@ mod geometry;
 pub mod gestures;
 mod model;
 mod ops;
+pub mod palette;
 mod repair;
 mod switcher;
 mod theme;

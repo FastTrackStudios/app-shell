@@ -7,11 +7,16 @@
 //! events for every drag (no HTML drag and drop), and nothing measured
 //! inside an event handler.
 
+mod bar;
 mod chrome;
 mod foot;
 pub mod icons;
 mod kinds;
+#[cfg(feature = "icons")]
+mod lucide;
+pub mod motion;
 mod overlay;
+mod palette;
 mod popup;
 mod shell;
 mod sidebar;
@@ -23,25 +28,31 @@ mod tests;
 mod window;
 mod windows;
 
+pub use bar::{
+    BarContributions, BarFiller, BarItem, BarPlace, BarRender, BarSpan, use_top_bar_item,
+    use_top_bar_span,
+};
 pub use chrome::{
     BarButton, DragArea, LIGHT, LIGHT_GAP, LIGHTS_LEFT, LIGHTS_WIDTH, SearchField, TOP_BAR_H,
     ToolbarButton, ToolbarGroup, TopBar, WindowLights,
 };
 pub use foot::{Destination, PrimaryAction};
-pub use icons::{Icon, IconView};
-pub use kinds::{Render, TabCtx, TabKind, TabKinds};
+pub use icons::{Icon, IconView, PUZZLE, named, named_icon};
+pub use kinds::{Render, TabCtx, TabHooks, TabKind, TabKinds};
 pub use overlay::{
     PaletteItem, Sheet, SheetContent, SheetHandle, SheetId, SheetSpec, Swipeable, ToastSpec,
     use_sheet,
 };
-pub use popup::{MenuAction, MenuItem, Popup, PopupContent, PopupLayer};
+pub use palette::{PaletteSources, ViewCommand, use_palette_sources, use_view_commands};
+pub use popup::{MenuAction, MenuItem, Popup, PopupContent, PopupLayer, under};
 pub use shell::{
-    AppShell, FormFactor, KeymapHandle, SHELL_CSS, Shell, Tabs, use_shell, use_window_layout,
-    window_title,
+    AppShell, BoundKey, FormFactor, KeyRun, KeyScope, KeymapHandle, PaletteOverlay, SHELL_CSS,
+    Shell, Tabs, use_shell, use_window_layout, window_title,
 };
 pub use sidebar::{
-    SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH, Sidebar, SidebarItem, SidebarSection, SidebarState,
-    SidebarSwitcher,
+    RIGHT_SIDEBAR_WIDTH, RightSidebarState, SIDEBAR_FOLD_BELOW, SIDEBAR_MAX, SIDEBAR_MIN,
+    SIDEBAR_PAGE_ROOM, SIDEBAR_RAIL, SIDEBAR_SNAP, SIDEBAR_WIDTH, ScrollArea, Sidebar, SidebarItem,
+    SidebarMode, SidebarSection, SidebarState, SidebarSwitcher, use_sidebar_mode,
 };
 pub use split::NodeView;
 pub use stack::{StackView, TabBar, TabBody};

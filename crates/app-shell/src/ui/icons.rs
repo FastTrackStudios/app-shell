@@ -82,6 +82,7 @@ pub fn IconView(icon: Icon, #[props(default = 14.0)] size: f32, color: Option<St
     }
 }
 
+pub const CHECK: Icon = Icon(&["M20 6 9 17l-5-5"]);
 pub const CHEVRON_DOWN: Icon = Icon(&["m6 9 6 6 6-6"]);
 pub const CHEVRON_RIGHT: Icon = Icon(&["m9 18 6-6-6-6"]);
 pub const CHEVRONS_UP_DOWN: Icon = Icon(&["m7 15 5 5 5-5", "m7 9 5-5 5 5"]);
@@ -118,3 +119,89 @@ pub const SETTINGS: Icon = Icon(&[
     "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z",
     "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
 ]);
+
+/// What [`named_icon`] draws for a name it does not know: a puzzle piece.
+pub const PUZZLE: Icon = Icon(&[
+    "M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z",
+]);
+
+/// The icon called `name`: Lucide's names (`"file-text"`, `"house"`,
+/// `"git-pull-request"`), all of them with feature `icons`, else the
+/// shell's own few (`"x"`, `"plus"`, `"search"`, `"settings"`, …). `None`
+/// for a name it does not have. For a name from data (a manifest, a
+/// layout file).
+#[must_use]
+pub fn named(name: &str) -> Option<Icon> {
+    let name = match name {
+        "home" => "house",
+        "indent-decrease" => "list-indent-decrease",
+        "indent-increase" => "list-indent-increase",
+        "external" => "external-link",
+        other => other,
+    };
+    #[cfg(feature = "icons")]
+    if let Some(icon) = super::lucide::lucide(name) {
+        return Some(icon);
+    }
+    Some(match name {
+        "x" => X,
+        "plus" => PLUS,
+        "minus" => MINUS,
+        "square" => SQUARE,
+        "layers" => LAYERS,
+        "columns" | "columns-2" => COLUMNS,
+        "rows" | "rows-2" => ROWS,
+        "external-link" => EXTERNAL,
+        "file" => FILE,
+        "pin" => PIN,
+        "maximize" => MAXIMIZE,
+        "panel-left" => PANEL_LEFT,
+        "panel-right" => PANEL_RIGHT,
+        "panel-bottom" => PANEL_BOTTOM,
+        "ellipsis" | "more" => MORE,
+        "check" => CHECK,
+        "chevron-down" => CHEVRON_DOWN,
+        "chevron-right" => CHEVRON_RIGHT,
+        "chevrons-up-down" => CHEVRONS_UP_DOWN,
+        "arrow-left" => ARROW_LEFT,
+        "arrow-right" => ARROW_RIGHT,
+        "menu" => MENU,
+        "search" => SEARCH,
+        "grid" | "layout-grid" => GRID,
+        "list" => LIST,
+        "house" => HOME,
+        "folder" => FOLDER,
+        "tag" => TAG,
+        "settings" => SETTINGS,
+        "puzzle" => PUZZLE,
+        _ => return None,
+    })
+}
+
+/// [`named`], or a puzzle piece for a name it does not have.
+#[must_use]
+pub fn named_icon(name: &str) -> Icon {
+    named(name).unwrap_or(PUZZLE)
+}
+
+#[cfg(test)]
+mod named_tests {
+    use super::*;
+
+    #[test]
+    fn a_name_it_has_is_its_icon_and_one_it_lacks_a_puzzle() {
+        assert_ne!(named_icon("search"), PUZZLE);
+        assert_eq!(named_icon("home"), named_icon("house"));
+        assert_eq!(named_icon("no-such-icon"), PUZZLE);
+    }
+
+    #[cfg(feature = "icons")]
+    #[test]
+    fn with_icons_every_lucide_name_is_there_its_shapes_as_paths() {
+        let check = named("circle-check").expect("lucide's circle-check");
+        assert_eq!(check.0.len(), 2);
+        assert!(check.0[0].starts_with('M'), "a circle as a path: {check:?}");
+        assert!(named("git-pull-request").is_some());
+        assert!(named("audio-lines").is_some());
+    }
+}

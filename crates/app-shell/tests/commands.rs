@@ -155,6 +155,22 @@ fn chords_parse_with_the_platforms_primary_modifier() {
 }
 
 #[test]
+fn chords_parse_as_menus_show_them() {
+    let mac = KeyChord::parse("⇧⌘Z", true).unwrap();
+    assert!(mac.meta && mac.shift && !mac.ctrl);
+    assert_eq!(mac.key, "z");
+    assert_eq!(mac, KeyChord::parse("Mod+Shift+Z", true).unwrap());
+    // ⌘ is the primary modifier: Ctrl off a Mac.
+    assert_eq!(chord("⌘K"), chord("Ctrl+K"));
+    assert_eq!(chord("⌃O"), chord("Ctrl+O"));
+    assert_eq!(chord("⌥←"), chord("Alt+ArrowLeft"));
+    let a = chord("A");
+    assert!(a.is_plain() && a.key == "a" && !a.shift);
+    assert_eq!(chord("Esc").key, "Escape");
+    assert!(KeyChord::parse("⌘", false).is_none());
+}
+
+#[test]
 fn the_default_keys_are_browser_tab_habits() {
     let k = DefaultKeymap;
     assert_eq!(k.command(&chord("Ctrl+W")), Some(Command::CloseTab));

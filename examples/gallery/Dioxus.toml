@@ -1,0 +1,6 @@
+[application]
+name = "app-shell-gallery"
+default_platform = "web"
+
+[web.app]
+title = "app-shell gallery"

@@ -7,9 +7,10 @@
 use std::cell::RefCell;
 
 use app_shell::ui::{
-    AppShell, FormFactor, SearchField, Sidebar, SidebarItem, SidebarSection, SidebarSwitcher,
-    TabCtx, TabKind, TabKinds, Tabs, ToolbarButton, ToolbarGroup, TopBar, WindowControls, icons,
-    use_shell,
+    AppShell, BarPlace, BarSpan, FormFactor, RightSidebarState, SHELL_CSS, ScrollArea, SearchField,
+    Sidebar, SidebarItem, SidebarMode, SidebarSection, SidebarState, SidebarSwitcher, TabCtx,
+    TabKind, TabKinds, Tabs, ToolbarButton, ToolbarGroup, TopBar, WindowControls, icons, use_shell,
+    use_sidebar_mode, use_top_bar_item, use_top_bar_span,
 };
 use app_shell::{Command, Pane, PaneId, Rect, Side, Target, WindowId, Workspace};
 use dioxus::prelude::*;
@@ -417,7 +418,7 @@ fn where_the_system_draws_the_lights_the_shell_keeps_their_room() {
 }
 
 #[test]
-fn a_sidebar_docks_at_the_left_with_the_lights_at_its_top() {
+fn the_top_bar_runs_across_with_the_lights_and_the_sidebar_docks_under_it() {
     let html = render_framed(true, None, true);
     assert!(html.contains("data-sidebar=\"docked\""));
     assert!(html.contains("width: 220px;"));
@@ -425,8 +426,8 @@ fn a_sidebar_docks_at_the_left_with_the_lights_at_its_top() {
     let lights_at = html.find("class=\"as-lights\"").unwrap();
     let bar_at = html.find("class=\"as-topbar\"").unwrap();
     assert!(
-        sidebar_at < lights_at && lights_at < bar_at,
-        "the lights in the sidebar, not the bar"
+        bar_at < lights_at && lights_at < sidebar_at,
+        "the lights in the bar, the sidebar under it"
     );
     assert_eq!(html.matches("class=\"as-lights\"").count(), 1);
     assert!(html.contains("text-transform: uppercase") && html.contains(">Library</span>"));
@@ -440,6 +441,137 @@ fn a_sidebar_docks_at_the_left_with_the_lights_at_its_top() {
     assert!(
         html.contains("aria-label=\"Sidebar\""),
         "the button that hides it"
+    );
+}
+
+#[derive(Props, Clone, PartialEq)]
+struct Railed {
+    rail: bool,
+}
+
+#[allow(non_snake_case)]
+fn RailShell(props: Railed) -> Element {
+    let c = use_hook(|| controls(true, None));
+    use_context_provider(|| c);
+    rsx! {
+        AppShell {
+            title: "Files",
+            form: FormFactor::Desktop,
+            sidebar_state: SidebarState { rail: Some(props.rail), ..SidebarState::default() },
+            sidebar: rsx! {
+                Sidebar {
+                    header: rsx! { SidebarSwitcher { title: "Library", detail: "3 locations" } },
+                    footer: rsx! { ModeProbe {} },
+                    SidebarSection { title: "Library", count: "2",
+                        action: rsx! { button { class: "add", "+" } },
+                        SidebarItem { label: "Overview", icon: icons::HOME, selected: true }
+                        SidebarItem { label: "Projects", icon: icons::FOLDER, badge: "3", expanded: true,
+                            SidebarItem { label: "Nested child", icon: icons::FOLDER }
+                        }
+                        SidebarItem { label: "Shut branch", expanded: false,
+                            SidebarItem { label: "Unseen child" }
+                        }
+                    }
+                }
+            },
+            p { "body" }
+        }
+    }
+}
+
+#[component]
+fn ModeProbe() -> Element {
+    let mode = match use_sidebar_mode() {
+        SidebarMode::Docked => "docked",
+        SidebarMode::Rail => "rail",
+        SidebarMode::Drawer => "drawer",
+    };
+    rsx! { span { class: "probe", "mode {mode}" } }
+}
+
+fn render_rail(rail: bool) -> String {
+    let mut dom = VirtualDom::new_with_props(RailShell, Railed { rail });
+    dom.rebuild_in_place();
+    dioxus_ssr::render(&dom)
+}
+
+#[test]
+fn rows_nest_under_a_chevron_with_a_guide_and_take_the_keyboard() {
+    let html = render_rail(false);
+    assert!(html.contains("data-sidebar=\"docked\""));
+    assert!(html.contains("mode docked"), "the content knows its mode");
+    assert!(
+        html.contains(">Nested child</span>"),
+        "an open branch shows its rows"
+    );
+    assert!(html.contains("aria-level=\"2\""), "one level in");
+    assert!(html.contains("class=\"as-indent-guide\""));
+    assert!(!html.contains("Unseen child"), "a shut branch hides them");
+    assert_eq!(
+        html.matches("aria-expanded=\"true\"").count(),
+        2,
+        "the section and the open branch"
+    );
+    assert!(html.contains("aria-label=\"Collapse\"") && html.contains("aria-label=\"Expand\""));
+    assert!(html.contains("tabindex=\"0\""), "rows take the focus");
+    assert!(html.contains("role=\"tree\"") && html.contains("role=\"treeitem\""));
+    assert!(
+        html.contains("class=\"as-section-count\"") && html.contains("class=\"as-section-action\"")
+    );
+    assert!(
+        html.contains("class=\"as-sidebar-edge\""),
+        "an edge to drag"
+    );
+}
+
+#[test]
+fn folded_to_the_rail_the_sidebar_is_icons_under_a_top_bar_across_the_window() {
+    let html = render_rail(true);
+    assert!(html.contains("data-sidebar=\"rail\"") && html.contains("width: 52px;"));
+    assert!(html.contains("mode rail"));
+    let bar_at = html.find("class=\"as-topbar\"").unwrap();
+    let lights_at = html.find("class=\"as-lights\"").unwrap();
+    let rail_at = html.find("data-sidebar=\"rail\"").unwrap();
+    assert!(
+        bar_at < lights_at && lights_at < rail_at,
+        "the lights in the top bar, the rail under it"
+    );
+    assert!(
+        html.contains("aria-label=\"Overview\""),
+        "its name for a reader and the tip"
+    );
+    assert!(!html.contains(">Overview</span>"), "no label drawn");
+    assert!(
+        !html.contains("Nested child"),
+        "nested rows hide on the rail"
+    );
+    assert!(
+        !html.contains(">Library</span>"),
+        "no headings, a rule instead"
+    );
+    assert!(html.contains("class=\"as-rail-rule\""));
+    assert!(html.contains("class=\"as-rail-dot\""), "a badge is a dot");
+}
+
+#[test]
+fn the_scrollbars_are_thin_rounded_and_themed_in_every_engine() {
+    for needle in [
+        "::-webkit-scrollbar-thumb",
+        "border-radius: 999px",
+        "var(--as-scrollbar)",
+        "scrollbar-width: thin",
+        "scrollbar-color: var(--as-scrollbar) transparent",
+        "@supports not selector(::-webkit-scrollbar)",
+    ] {
+        assert!(SHELL_CSS.contains(needle), "{needle}");
+    }
+    let mut dom = VirtualDom::new(|| rsx! { ScrollArea { p { "x" } } });
+    dom.rebuild_in_place();
+    let html = dioxus_ssr::render(&dom);
+    assert!(html.contains("as-scroll") && html.contains("overflow-y: scroll"));
+    assert!(
+        !html.contains("scrollbar-width"),
+        "inline, it would switch Blink's parts off"
     );
 }
 
@@ -696,6 +828,73 @@ fn a_menu_is_an_action_sheet_on_a_phone_and_a_popup_on_a_desktop() {
 }
 
 #[test]
+fn a_menu_has_headings_notes_and_ticks() {
+    use app_shell::ui::MenuItem;
+    let items = || {
+        vec![
+            MenuItem::heading("Sort by"),
+            MenuItem::call("Name", Callback::new(|()| {})).checked(true),
+            MenuItem::call("Date", Callback::new(|()| {})).checked(false),
+            MenuItem::separator(),
+            MenuItem::note("Nothing else here"),
+        ]
+    };
+    let desk = render_sheets(FormFactor::Desktop, move |s| s.menu(10.0, 10.0, items()));
+    assert!(desk.contains("class=\"as-menu-heading\"") && desk.contains(">Sort by</div>"));
+    assert!(desk.contains("class=\"as-menu-note\"") && desk.contains(">Nothing else here</div>"));
+    // One tick, for the row that is on.
+    assert_eq!(desk.matches("M20 6 9 17l-5-5").count(), 1);
+    assert_eq!(desk.matches("role=\"menuitem\"").count(), 2, "text is not a row to press");
+    let phone = render_sheets(FormFactor::Phone, move |s| s.menu(10.0, 10.0, items()));
+    assert!(phone.contains(">Sort by</div>") && phone.contains(">Nothing else here</div>"));
+    assert_eq!(phone.matches("M20 6 9 17l-5-5").count(), 1);
+}
+
+#[derive(Clone, PartialEq, Props)]
+struct Commanding {
+    on: bool,
+}
+
+#[allow(non_snake_case)]
+fn ViewWithCommands(props: Commanding) -> Element {
+    let on = props.on;
+    app_shell::ui::use_view_commands(
+        "lab",
+        "Lab",
+        vec![app_shell::ui::ViewCommand::new(
+            app_shell::palette::Item::new("LAB_TOGGLE", "Toggle the lab").checked(on),
+            move || RAN.with(|r| *r.borrow_mut() += 1),
+        )],
+    );
+    rsx! { "view" }
+}
+
+thread_local! {
+    static RAN: RefCell<usize> = const { RefCell::new(0) };
+    static SOURCES: RefCell<Option<app_shell::ui::PaletteSources>> = const { RefCell::new(None) };
+}
+
+#[allow(non_snake_case)]
+fn CommandsApp() -> Element {
+    let sources = app_shell::ui::use_palette_sources();
+    SOURCES.with(|s| *s.borrow_mut() = Some(sources));
+    rsx! { ViewWithCommands { on: true } }
+}
+
+#[test]
+fn a_views_commands_are_on_the_palette_while_it_is_mounted() {
+    let mut dom = VirtualDom::new(CommandsApp);
+    dom.rebuild_in_place();
+    let sources = SOURCES.with(|s| s.borrow().clone()).unwrap();
+    let rows = dom.in_runtime(|| sources.search("toggle"));
+    let row = rows.first().expect("the view's command").item.clone();
+    assert_eq!((row.id.as_str(), row.source.as_str()), ("LAB_TOGGLE", "lab"));
+    assert_eq!(row.checked, Some(true));
+    dom.in_runtime(|| sources.run(&row));
+    assert_eq!(RAN.with(|r| *r.borrow()), 1);
+}
+
+#[test]
 fn the_palette_is_a_sheet_on_a_phone_and_near_the_top_on_a_desktop() {
     let phone = render_sheets(FormFactor::Phone, |s| s.open_palette());
     assert!(phone.contains("class=\"as-palette\"") && phone.contains("data-detent=\"large\""));
@@ -743,4 +942,116 @@ fn a_declared_sheet_opens_while_its_flag_is_set() {
     };
     assert!(render(true).contains(">Inspector</span>"));
     assert!(!render(false).contains("Inspector"));
+}
+
+#[component]
+fn Contributes(middle: bool) -> Element {
+    use_top_bar_item("app/sync", BarPlace::Trailing, 0, || {
+        rsx! { span { class: "sync-item", "Synced" } }
+    });
+    use_top_bar_item("app/crumb", BarPlace::Leading, 0, || {
+        rsx! { span { class: "crumb-item", "Set 3" } }
+    });
+    if middle {
+        use_top_bar_span("app/tabs", BarSpan::Middle, || {
+            rsx! { span { class: "song-tabs", "Song tabs" } }
+        });
+    }
+    rsx! { p { class: "page", "page" } }
+}
+
+#[test]
+fn a_page_puts_items_in_the_bars_places_and_can_take_over_its_middle() {
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Notes", form: FormFactor::Desktop,
+                top_bar: rsx! { TopBar { title: "Notes", actions: rsx! { span { class: "app-action", "A" } } } },
+                Contributes { middle: false }
+            }
+        }
+    });
+    let (title, crumb) = (
+        html.find(">Notes</span>").unwrap(),
+        html.find("crumb-item").unwrap(),
+    );
+    let (sync, action) = (
+        html.find("sync-item").unwrap(),
+        html.find("app-action").unwrap(),
+    );
+    assert!(title < crumb, "leading items after the title");
+    assert!(
+        crumb < sync && sync < action,
+        "trailing items before the app's actions"
+    );
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Notes", form: FormFactor::Desktop,
+                top_bar: rsx! { TopBar { title: "Notes", actions: rsx! { span { class: "app-action", "A" } } } },
+                Contributes { middle: true }
+            }
+        }
+    });
+    assert!(html.contains("song-tabs"));
+    assert!(
+        !html.contains(">Notes</span>")
+            && !html.contains("sync-item")
+            && !html.contains("app-action"),
+        "the middle filler stands for the title, the center and the trailing items"
+    );
+    assert!(
+        html.contains("class=\"as-topbar\""),
+        "the bar is still the shell's"
+    );
+}
+
+#[test]
+fn a_right_sidebar_docks_at_the_right_with_its_toggle_at_the_bars_end() {
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Notes", form: FormFactor::Desktop,
+                right_sidebar: rsx! { div { class: "inspector", "Inspector" } },
+                p { class: "page", "page" }
+            }
+        }
+    });
+    let (page, right) = (
+        html.find("class=\"page\"").unwrap(),
+        html.find("inspector").unwrap(),
+    );
+    assert!(page < right, "the right sidebar after the frames");
+    assert!(html.contains("data-sidebar=\"right\"") && html.contains("width: 280px;"));
+    assert!(html.contains("aria-label=\"Hide the right sidebar\""));
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Notes", form: FormFactor::Desktop,
+                right_sidebar: rsx! { div { class: "inspector", "Inspector" } },
+                right_sidebar_state: RightSidebarState { open: false, width: 300.0 },
+                p { class: "page", "page" }
+            }
+        }
+    });
+    assert!(!html.contains("inspector") && html.contains("aria-label=\"Show the right sidebar\""));
+    let html = render_app(
+        || rsx! { AppShell { title: "Notes", form: FormFactor::Desktop, p { "page" } } },
+    );
+    assert!(
+        !html.contains("right sidebar"),
+        "no right sidebar, no toggle"
+    );
+}
+
+#[test]
+fn mod_alt_b_toggles_the_right_sidebar() {
+    use app_shell::{DefaultKeymap, KeyChord, Keymap};
+    let chord = KeyChord {
+        key: "b".into(),
+        ctrl: true,
+        shift: false,
+        alt: true,
+        meta: false,
+    };
+    assert_eq!(
+        DefaultKeymap.command(&chord),
+        Some(Command::ToggleRightSidebar)
+    );
 }

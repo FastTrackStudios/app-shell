@@ -5,6 +5,7 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
+use super::bar::{BarContributions, BarFiller, BarItem, BarSpan};
 use super::chrome::TopBar;
 use super::foot::{DeskAccessory, Destination, PhoneFoot, PrimaryAction};
 use super::kinds::{TabKind, TabKinds};
@@ -14,7 +15,10 @@ use super::overlay::{
 };
 use super::popup::MenuAction;
 use super::popup::{MenuItem, Popup, PopupContent, PopupLayer};
-use super::sidebar::{DockedSidebar, DrawerSidebar, SIDEBAR_MAX, SIDEBAR_MIN, SidebarState};
+use super::sidebar::{
+    DockedSidebar, DrawerSidebar, RightSidebar, RightSidebarState, SIDEBAR_MAX, SIDEBAR_MIN,
+    SidebarState, Tip, TipLayer, right_drag, sidebar_drag,
+};
 use super::stack::DragLayer;
 use super::switcher::Switcher;
 use super::window::{InPageWindows, SoloView, WindowBody};
@@ -89,6 +93,84 @@ impl Default for KeymapHandle {
     }
 }
 
+/// Where a [`BoundKey`] holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyScope {
+    /// Everywhere in the window, after the [`Keymap`]'s commands.
+    Window,
+    /// While the active tab is of this kind, before the [`Keymap`]: a
+    /// view's own keys (⌘Z in a chart, plain letters for note input).
+    Kind(String),
+}
+
+/// What a [`BoundKey`] does, told the active tab; whether it took the key.
+pub type KeyRun = Rc<dyn Fn(Option<&Pane>) -> bool>;
+
+/// A key bound to something the app does itself (an extension's action),
+/// not a layout [`Command`]: [`Shell::bind_keys`].
+#[derive(Clone)]
+pub struct BoundKey {
+    pub chord: KeyChord,
+    pub scope: KeyScope,
+    /// Does it, told the active tab: false when it did not take the key
+    /// (a plain letter typed into a text field), which then goes on.
+    pub run: KeyRun,
+}
+
+impl BoundKey {
+    /// `chord` in `scope`, running `run`.
+    pub fn new(
+        chord: KeyChord,
+        scope: KeyScope,
+        run: impl Fn(Option<&Pane>) -> bool + 'static,
+    ) -> Self {
+        Self {
+            chord,
+            scope,
+            run: Rc::new(run),
+        }
+    }
+}
+
+impl std::fmt::Debug for BoundKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BoundKey")
+            .field("chord", &self.chord)
+            .field("scope", &self.scope)
+            .finish_non_exhaustive()
+    }
+}
+
+/// An overlay of the shell's palette slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PaletteOverlay {
+    /// The command palette (Mod+K).
+    Palette,
+    /// Open anything (⌘O).
+    QuickOpen,
+}
+
+impl PaletteOverlay {
+    /// `palette` or `quick-open`.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "palette" => Some(Self::Palette),
+            "quick-open" => Some(Self::QuickOpen),
+            _ => None,
+        }
+    }
+
+    /// Its name: `palette` or `quick-open`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Palette => "palette",
+            Self::QuickOpen => "quick-open",
+        }
+    }
+}
+
 /// A pointer gesture under way.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Gesture {
@@ -100,6 +182,8 @@ pub(crate) enum Gesture {
         at: (f64, f64),
         live: bool,
     },
+    /// The right sidebar's edge dragged.
+    RightSidebar { start: (f64, f64), width: f32 },
     /// A split's divider dragged: between child `index` and the next.
     Divider {
         split: SplitId,
@@ -122,8 +206,13 @@ pub(crate) enum Gesture {
         start: (f64, f64),
         rect: Rect,
     },
-    /// The docked sidebar's edge dragged.
-    Sidebar { start: (f64, f64), width: f32 },
+    /// The docked sidebar's edge dragged: its full width, and whether it
+    /// was the rail, when the drag began.
+    Sidebar {
+        start: (f64, f64),
+        width: f32,
+        rail: bool,
+    },
     /// A phone's drawer under the finger: opening from the edge (`from`
     /// 0) or closing (`from` 1).
     Drawer { start: (f64, f64), from: f64 },
@@ -165,11 +254,15 @@ struct Hooks {
     on_command: Option<Callback<Command, bool>>,
     on_new_tab: Option<EventHandler<GroupId>>,
     on_sidebar: Option<EventHandler<SidebarState>>,
+    on_right_sidebar: Option<EventHandler<RightSidebarState>>,
     palette: Option<Callback<(), Vec<PaletteItem>>>,
     kinds: TabKinds,
     keymap: KeymapHandle,
     hub: Option<LayoutHub>,
 }
+
+/// The keys bound with [`Shell::bind_keys`], by who bound them.
+type Bound = Vec<(String, Vec<BoundKey>)>;
 
 /// The shell of one window, in context for everything under
 /// [`AppShell`]: the layout, and what a component inside does to it.
@@ -194,6 +287,23 @@ pub struct Shell {
     /// The docked sidebar: shown, and its width.
     pub(crate) sidebar_open: Signal<bool>,
     pub(crate) sidebar_w: Signal<f32>,
+    /// Folded to the rail, as chosen (`None`: by the window's width).
+    pub(crate) sidebar_rail: Signal<Option<bool>>,
+    /// Whether the app gave a right sidebar.
+    pub(crate) right_given: Signal<bool>,
+    /// The right sidebar: shown, and its width.
+    pub(crate) right_open: Signal<bool>,
+    pub(crate) right_w: Signal<f32>,
+    /// What apps, pages and extensions put in the top bar ([`super::bar`]).
+    pub(crate) bar: Signal<BarContributions>,
+    /// Each sidebar section's folding, by its id: kept across the rail,
+    /// the drawer and the sidebar coming back.
+    pub(crate) section_open: Signal<std::collections::HashMap<String, bool>>,
+    /// A rail icon's name on show.
+    pub(crate) tip: Signal<Option<Tip>>,
+    /// Where the shell's root is in the window (its overlays are placed
+    /// from it).
+    pub(crate) origin: Signal<(f64, f64)>,
     /// The phone's drawer is out.
     pub(crate) drawer: Signal<bool>,
     /// How open the drawer is under the finger (0 to 1), while dragged.
@@ -206,6 +316,13 @@ pub struct Shell {
     /// The toasts waiting, the first on show.
     pub(crate) toasts: Signal<Vec<ToastEntry>>,
     next_id: CopyValue<u64>,
+    /// Keys the app binds past its keymap ([`Shell::bind_keys`]).
+    bound: CopyValue<Bound>,
+    /// What draws each palette overlay in the shell's place
+    /// ([`Shell::set_palette_view`]).
+    palette_views: CopyValue<Vec<(PaletteOverlay, Callback<(), Element>)>>,
+    /// The query the next palette opens with.
+    palette_query: CopyValue<String>,
     /// The window's size, points (0 until measured).
     pub(crate) viewport: Signal<(f64, f64)>,
     hooks: CopyValue<Hooks>,
@@ -279,15 +396,31 @@ impl Shell {
             self.open_palette();
             return;
         }
+        if command == Command::ToggleRightSidebar {
+            if self.has_right_sidebar() && self.form() != FormFactor::Phone {
+                let now = self.right_sidebar_state();
+                self.set_right_sidebar(RightSidebarState {
+                    open: !now.open,
+                    ..now
+                });
+            }
+            return;
+        }
         if command == Command::ToggleSidebar {
             if self.has_sidebar() {
                 if self.form() == FormFactor::Phone {
                     let out = *self.drawer.peek();
                     self.set_drawer(!out);
                 } else {
-                    let open = *self.sidebar_open.peek();
-                    let width = *self.sidebar_w.peek();
-                    self.set_sidebar(SidebarState { open: !open, width });
+                    // Folded to the rail and back (Architect's); a hidden
+                    // sidebar comes back at its full width.
+                    let now = self.sidebar_state();
+                    let rail = now.open && !self.sidebar_folded();
+                    self.set_sidebar(SidebarState {
+                        open: true,
+                        rail: Some(rail),
+                        ..now
+                    });
                 }
             }
             return;
@@ -419,22 +552,90 @@ impl Shell {
     }
 
     /// Open the command palette with the app's entries (`palette`):
-    /// a sheet on a phone, a panel near the top on a desktop.
+    /// a sheet on a phone, a panel near the top on a desktop. When a view
+    /// draws it ([`Self::set_palette_view`]), that view, in its place.
     pub fn open_palette(&self) {
-        let items = self
-            .hooks
-            .peek()
-            .palette
-            .map(|f| f.call(()))
-            .unwrap_or_default();
+        self.open_overlay(PaletteOverlay::Palette, "");
+    }
+
+    /// Open open-anything (⌘O): what the openers in the
+    /// [`super::PaletteSources`] in context find, or the view that draws
+    /// it.
+    pub fn open_quick_open(&self) {
+        self.open_overlay(PaletteOverlay::QuickOpen, "");
+    }
+
+    /// Open `overlay`, its field holding `query` (`theme:` asks one
+    /// opener). One open already closes first.
+    pub fn open_overlay(&self, overlay: PaletteOverlay, query: &str) {
+        self.close_palette();
         self.close_popup();
+        let mut q = self.palette_query;
+        q.set(query.to_owned());
+        let content = match (self.palette_view(overlay), overlay) {
+            (Some(draw), _) => SheetContent::Overlay(draw),
+            (None, PaletteOverlay::Palette) => SheetContent::Palette(
+                self.hooks
+                    .peek()
+                    .palette
+                    .map(|f| f.call(()))
+                    .unwrap_or_default(),
+            ),
+            (None, PaletteOverlay::QuickOpen) => SheetContent::QuickOpen,
+        };
         self.open_sheet(SheetSpec {
             title: None,
             detent: Detent::Large,
             detents: vec![Detent::Large],
-            content: SheetContent::Palette(items),
+            content,
             on_close: None,
         });
+    }
+
+    /// Close the palette's overlay, if one is open.
+    pub fn close_palette(&self) {
+        let open: Vec<SheetId> = self
+            .sheets
+            .peek()
+            .iter()
+            .filter(|s| {
+                matches!(
+                    s.spec.content,
+                    SheetContent::Palette(_) | SheetContent::QuickOpen | SheetContent::Overlay(_)
+                )
+            })
+            .map(|s| s.id)
+            .collect();
+        for id in open {
+            self.close_sheet(id);
+        }
+    }
+
+    /// Draws `overlay` with `draw` in place of the shell's own (an
+    /// extension's palette); `None` gives it back to the shell.
+    pub fn set_palette_view(&self, overlay: PaletteOverlay, draw: Option<Callback<(), Element>>) {
+        let mut views = self.palette_views;
+        let mut all = views.write();
+        all.retain(|(o, _)| *o != overlay);
+        if let Some(draw) = draw {
+            all.push((overlay, draw));
+        }
+    }
+
+    /// What draws `overlay` in the shell's place, if anything.
+    #[must_use]
+    pub fn palette_view(&self, overlay: PaletteOverlay) -> Option<Callback<(), Element>> {
+        self.palette_views
+            .peek()
+            .iter()
+            .find(|(o, _)| *o == overlay)
+            .map(|(_, d)| *d)
+    }
+
+    /// The query the palette opening now starts with (then none).
+    pub(crate) fn take_palette_query(&self) -> String {
+        let mut q = self.palette_query;
+        std::mem::take(&mut *q.write())
     }
 
     /// Close what floats over the page for a navigation: the popup, the
@@ -493,22 +694,102 @@ impl Shell {
         }
     }
 
-    /// Show, hide or resize the docked sidebar, telling the app.
+    /// The docked sidebar's state now.
+    #[must_use]
+    pub fn sidebar_state(&self) -> SidebarState {
+        SidebarState {
+            open: *self.sidebar_open.peek(),
+            width: *self.sidebar_w.peek(),
+            rail: *self.sidebar_rail.peek(),
+        }
+    }
+
+    /// Whether the docked sidebar is folded to the rail now (chosen, or by
+    /// the window's width).
+    #[must_use]
+    pub fn sidebar_folded(&self) -> bool {
+        let rail = *self.sidebar_rail.read();
+        let w = self.viewport.read().0;
+        SidebarState {
+            rail,
+            ..SidebarState::default()
+        }
+        .folded(w)
+    }
+
+    /// Show, hide, fold or resize the docked sidebar, telling the app.
     pub fn set_sidebar(&self, state: SidebarState) {
         let width = state.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
-        let (mut open, mut w) = (self.sidebar_open, self.sidebar_w);
+        let (mut open, mut w, mut rail) = (self.sidebar_open, self.sidebar_w, self.sidebar_rail);
         if *open.peek() != state.open {
             open.set(state.open);
         }
         if (*w.peek() - width).abs() > f32::EPSILON {
             w.set(width);
         }
-        if let Some(f) = self.hooks.peek().on_sidebar {
-            f.call(SidebarState {
-                open: state.open,
-                width,
-            });
+        if *rail.peek() != state.rail {
+            rail.set(state.rail);
         }
+        if let Some(f) = self.hooks.peek().on_sidebar {
+            f.call(SidebarState { width, ..state });
+        }
+    }
+
+    /// Whether the app gave a right sidebar.
+    #[must_use]
+    pub fn has_right_sidebar(&self) -> bool {
+        *self.right_given.read()
+    }
+
+    /// The right sidebar's state now.
+    #[must_use]
+    pub fn right_sidebar_state(&self) -> RightSidebarState {
+        RightSidebarState {
+            open: *self.right_open.peek(),
+            width: *self.right_w.peek(),
+        }
+    }
+
+    /// Show, hide or resize the right sidebar, telling the app.
+    pub fn set_right_sidebar(&self, state: RightSidebarState) {
+        let width = state.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
+        let (mut open, mut w) = (self.right_open, self.right_w);
+        if *open.peek() != state.open {
+            open.set(state.open);
+        }
+        if (*w.peek() - width).abs() > f32::EPSILON {
+            w.set(width);
+        }
+        if let Some(f) = self.hooks.peek().on_right_sidebar {
+            f.call(RightSidebarState { width, ..state });
+        }
+    }
+
+    /// Put an item in a place of the top bar (in place of one with its
+    /// id) — [`super::bar`].
+    pub fn put_bar_item(&self, item: BarItem) {
+        let mut bar = self.bar;
+        bar.write().put(item);
+    }
+
+    /// Take an item out of the top bar.
+    pub fn remove_bar_item(&self, id: &str) {
+        let mut bar = self.bar;
+        if bar.peek().items_with_id(id) {
+            bar.write().remove(id);
+        }
+    }
+
+    /// Take over a span of the top bar.
+    pub fn fill_bar(&self, filler: BarFiller) {
+        let mut bar = self.bar;
+        bar.write().fill(filler);
+    }
+
+    /// Give back a span `owner` took over.
+    pub fn unfill_bar(&self, owner: &str, span: BarSpan) {
+        let mut bar = self.bar;
+        bar.write().unfill(owner, span);
     }
 
     /// The kind a pane names, if the app registered it.
@@ -557,13 +838,64 @@ impl Shell {
         matches!(&*self.gesture.peek(), Some(Gesture::Tab { live: true, .. }))
     }
 
+    /// What the keys `owner` binds are from now on (none: it binds none),
+    /// past the app's [`Keymap`]: a tab kind's before it, the window's
+    /// after it. Between owners, the first to bind a chord wins it.
+    pub fn bind_keys(&self, owner: &str, keys: Vec<BoundKey>) {
+        let mut bound = self.bound;
+        let mut all = bound.write();
+        if keys.is_empty() {
+            all.retain(|(o, _)| o != owner);
+        } else if let Some(at) = all.iter_mut().find(|(o, _)| o == owner) {
+            at.1 = keys;
+        } else {
+            all.push((owner.to_owned(), keys));
+        }
+    }
+
+    /// Does what `chord` asks in this window, as a key pressed in it:
+    /// the active tab's kind's bound keys, then the [`Keymap`]'s command,
+    /// then the window's bound keys. Whether something took it.
+    pub fn press_key(&self, chord: &KeyChord) -> bool {
+        let active = {
+            let layout = self.layout.peek();
+            layout.active.as_ref().and_then(|a| layout.pane(a)).cloned()
+        };
+        let bound: Vec<BoundKey> = self
+            .bound
+            .peek()
+            .iter()
+            .flat_map(|(_, keys)| keys.iter().filter(|k| k.chord == *chord).cloned())
+            .collect();
+        let kind = active.as_ref().map(|p| p.view.0.as_str());
+        let in_kind = bound
+            .iter()
+            .filter(|k| matches!(&k.scope, KeyScope::Kind(v) if Some(v.as_str()) == kind));
+        for k in in_kind {
+            if (k.run)(active.as_ref()) {
+                return true;
+            }
+        }
+        if self.key(chord) {
+            return true;
+        }
+        bound
+            .iter()
+            .filter(|k| k.scope == KeyScope::Window)
+            .any(|k| (k.run)(active.as_ref()))
+    }
+
     fn key(&self, chord: &KeyChord) -> bool {
         let keymap = self.hooks.peek().keymap.clone();
         let tabs = self.tabs_shown();
         match keymap.0.command(chord) {
             // Without tabs, only the commands that are not about tabs.
             Some(command)
-                if tabs || matches!(command, Command::ToggleSidebar | Command::OpenPalette) =>
+                if tabs
+                    || matches!(
+                        command,
+                        Command::ToggleSidebar | Command::ToggleRightSidebar | Command::OpenPalette
+                    ) =>
             {
                 self.command(command);
                 true
@@ -634,10 +966,26 @@ impl Shell {
                     e.drag = dy;
                 }
             }
-            Some(Gesture::Sidebar { start, width }) => {
-                let next = (width + narrow(at.0 - start.0)).clamp(SIDEBAR_MIN, SIDEBAR_MAX);
-                let mut w = self.sidebar_w;
-                w.set(next);
+            Some(Gesture::RightSidebar { start, width }) if (at.0 - start.0).abs() >= DRAG_SLOP => {
+                let vw = self.viewport.peek().0;
+                let next = right_drag(width, narrow(at.0 - start.0), vw);
+                let mut w = self.right_w;
+                if (*w.peek() - next).abs() > f32::EPSILON {
+                    w.set(next);
+                }
+            }
+            Some(Gesture::Sidebar { start, width, rail })
+                if (at.0 - start.0).abs() >= DRAG_SLOP =>
+            {
+                let vw = self.viewport.peek().0;
+                let (folded, next) = sidebar_drag(width, rail, narrow(at.0 - start.0), vw);
+                let (mut w, mut r) = (self.sidebar_w, self.sidebar_rail);
+                if (*w.peek() - next).abs() > f32::EPSILON {
+                    w.set(next);
+                }
+                if *r.peek() != Some(folded) {
+                    r.set(Some(folded));
+                }
             }
             Some(Gesture::Float { pane, start, rect }) => {
                 let moved = Rect::new(
@@ -700,9 +1048,20 @@ impl Shell {
                 }
             }
             Gesture::Tab { .. } => {}
-            Gesture::Sidebar { .. } => {
-                let width = *self.sidebar_w.peek();
-                self.set_sidebar(SidebarState { open: true, width });
+            Gesture::RightSidebar { start, .. } => {
+                if (at.0 - start.0).abs() < DRAG_SLOP {
+                    return;
+                }
+                let now = self.right_sidebar_state();
+                self.set_right_sidebar(RightSidebarState { open: true, ..now });
+            }
+            Gesture::Sidebar { start, .. } => {
+                // A press that did not move chooses nothing.
+                if (at.0 - start.0).abs() < DRAG_SLOP {
+                    return;
+                }
+                let now = self.sidebar_state();
+                self.set_sidebar(SidebarState { open: true, ..now });
             }
             Gesture::Drawer { start, from } => {
                 let dx = at.0 - start.0;
@@ -760,8 +1119,16 @@ pub(crate) const fn narrow(v: f64) -> f32 {
     v as f32
 }
 
-/// The hover affordances: additive only (every component lays out
-/// without them), one static sheet both renderers read.
+/// The hover, press and focus affordances and the scrollbars: additive
+/// only (every component lays out without them), one static sheet both
+/// renderers read.
+///
+/// The scrollbars are thin, rounded and in the theme's colours
+/// (`--as-scrollbar`, `--as-scrollbar-hover`) everywhere inside the shell,
+/// the app's own content included: WebKit and Blink by their
+/// `::-webkit-scrollbar` parts, Firefox by `scrollbar-width` and
+/// `scrollbar-color` (set only where the WebKit parts are unknown: in
+/// Blink they would switch the parts off).
 pub const SHELL_CSS: &str = r"
 .as-hov:hover { background-color: var(--as-raised); }
 .as-tab:hover { color: var(--as-text); }
@@ -772,6 +1139,31 @@ pub const SHELL_CSS: &str = r"
 .as-lights .as-glyph { opacity: 0; }
 .as-lights:hover .as-glyph { opacity: 1; }
 .as-search:focus-within { border-color: var(--as-accent); }
+.as-row { cursor: default; outline: none; }
+.as-row-hov:hover { background-color: var(--as-hover); }
+.as-row:active { background-color: var(--as-pressed); }
+.as-row:focus-visible, .as-section-heading:focus-visible { box-shadow: inset 0 0 0 2px var(--as-focus); }
+.as-section-heading { cursor: default; outline: none; }
+.as-section-heading:hover { color: var(--as-muted); }
+.as-section-chevron { opacity: 0.55; }
+.as-section-heading:hover .as-section-chevron, .as-section-heading:focus-visible .as-section-chevron { opacity: 1; }
+.as-section-action { opacity: 0; }
+.as-section-heading:hover .as-section-action, .as-section-heading:focus-within .as-section-action { opacity: 1; }
+.as-row-chevron:hover { color: var(--as-text); }
+.as-sidebar-section:first-child > .as-rail-rule { display: none; }
+.as-sidebar-edge:hover .as-edge-line, .as-sidebar-edge[data-dragging=true] .as-edge-line { background-color: var(--as-accent); }
+.app-shell::-webkit-scrollbar, .app-shell ::-webkit-scrollbar { width: 10px; height: 10px; }
+.app-shell::-webkit-scrollbar-track, .app-shell ::-webkit-scrollbar-track,
+.app-shell::-webkit-scrollbar-corner, .app-shell ::-webkit-scrollbar-corner { background-color: transparent; }
+.app-shell::-webkit-scrollbar-thumb, .app-shell ::-webkit-scrollbar-thumb {
+  background-color: var(--as-scrollbar); border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box; min-height: 32px;
+}
+.app-shell::-webkit-scrollbar-thumb:hover, .app-shell ::-webkit-scrollbar-thumb:hover { background-color: var(--as-scrollbar-hover); }
+.app-shell ::-webkit-scrollbar-button { display: none; }
+@supports not selector(::-webkit-scrollbar) {
+  .app-shell, .app-shell * { scrollbar-width: thin; scrollbar-color: var(--as-scrollbar) transparent; }
+}
 ";
 
 /// The shell's sheet, in a component of its own that never changes.
@@ -827,6 +1219,14 @@ pub fn AppShell(
     sidebar_state: Option<SidebarState>,
     /// Hears the sidebar shown, hidden or resized (to keep it).
     on_sidebar: Option<EventHandler<SidebarState>>,
+    /// The right sidebar's content (an inspector, Now Playing): docked at
+    /// the right under the top bar on a desktop, its toggle at the top
+    /// bar's right. None: no right sidebar and no toggle.
+    right_sidebar: Option<Element>,
+    /// The right sidebar's state to start with.
+    right_sidebar_state: Option<RightSidebarState>,
+    /// Hears the right sidebar shown, hidden or resized (to keep it).
+    on_right_sidebar: Option<EventHandler<RightSidebarState>>,
     /// The app's primary destinations: on a phone, the tab pill at the
     /// foot (on a desktop the sidebar holds them).
     #[props(default)]
@@ -841,11 +1241,23 @@ pub fn AppShell(
     accessory: Option<Element>,
     /// The command palette's entries (Mod+K, `Shell::open_palette`).
     palette: Option<Callback<(), Vec<PaletteItem>>>,
+    /// Drawn over everything at the shell's root, in its context
+    /// ([`use_shell`] works there from the first render): an app's or its
+    /// extensions' own layers (`app_shell_extensions::ExtensionOverlays`).
+    /// Each places itself (`position: absolute`, a `z-index`); the
+    /// shell's menus, sheets and toasts come after it.
+    layers: Option<Element>,
     /// The content area, without a `layout` or with tabs off.
     children: Element,
 ) -> Element {
     let windows = try_use_context::<Windows>();
     let hub = try_use_context::<LayoutHub>();
+    // The theme as values, for what cannot read its variables (an SVG's
+    // presentation attributes, an image's colours).
+    let mut vars = use_context_provider(|| Signal::new(theme.clone()));
+    if *vars.peek() != theme {
+        vars.set(theme.clone());
+    }
     let own_layout = use_signal(Workspace::new);
     let has_layout = layout.is_some();
     let layout = layout.unwrap_or(own_layout);
@@ -854,6 +1266,7 @@ pub fn AppShell(
     let measured = use_signal(|| (0.0_f64, 0.0_f64));
     let mut form_sig = use_signal(|| form.unwrap_or(FormFactor::Desktop));
     let start = sidebar_state.unwrap_or_default();
+    let right_start = right_sidebar_state.unwrap_or_default();
     let hooks = use_hook(|| CopyValue::new(Hooks::default()));
     let mut hooks_w = hooks;
     *hooks_w.write() = Hooks {
@@ -861,6 +1274,7 @@ pub fn AppShell(
         on_command,
         on_new_tab,
         on_sidebar,
+        on_right_sidebar,
         palette,
         kinds,
         keymap,
@@ -879,12 +1293,23 @@ pub fn AppShell(
         sidebar_given: Signal::new(sidebar.is_some()),
         sidebar_open: Signal::new(start.open),
         sidebar_w: Signal::new(start.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX)),
+        sidebar_rail: Signal::new(start.rail),
+        right_given: Signal::new(right_sidebar.is_some()),
+        right_open: Signal::new(right_start.open),
+        right_w: Signal::new(right_start.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX)),
+        bar: Signal::new(BarContributions::default()),
+        section_open: Signal::new(std::collections::HashMap::new()),
+        tip: Signal::new(None),
+        origin: Signal::new((0.0, 0.0)),
         drawer: Signal::new(false),
         drawer_drag: Signal::new(None),
         drawer_dragged: CopyValue::new(false),
         sheets: Signal::new(Vec::new()),
         toasts: Signal::new(Vec::new()),
         next_id: CopyValue::new(1),
+        bound: CopyValue::new(Vec::new()),
+        palette_views: CopyValue::new(Vec::new()),
+        palette_query: CopyValue::new(String::new()),
         viewport: Signal::new((0.0, 0.0)),
         hooks,
     });
@@ -906,6 +1331,10 @@ pub fn AppShell(
     }
     if *given.peek() != sidebar.is_some() {
         given.set(sidebar.is_some());
+    }
+    let mut right_given = shell.right_given;
+    if *right_given.peek() != right_sidebar.is_some() {
+        right_given.set(right_sidebar.is_some());
     }
 
     // The other windows' changes, and what the platform did to pop-outs.
@@ -982,10 +1411,12 @@ pub fn AppShell(
     let tabs_now = shell.tabs_shown();
     let switcher = *shell.switcher.read() && tabs_now;
     let docked = !phone && sidebar.is_some() && *shell.sidebar_open.read();
+    let right_docked = !phone && right_sidebar.is_some() && *shell.right_open.read();
+    let rail = docked && shell.sidebar_folded();
     let drawer = phone && sidebar.is_some();
     let touch = if phone { " touch-action: pan-y;" } else { "" };
     let style = format!(
-        "{} position: relative; width: 100%; height: 100%; display: flex; flex-direction: row; \
+        "{} position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; \
          overflow: hidden; background-color: var(--as-bg); color: var(--as-text); \
          font-family: var(--as-font); font-size: var(--as-font-size); outline: none; \
          user-select: none; box-sizing: border-box;{touch}",
@@ -1007,6 +1438,8 @@ pub fn AppShell(
                 spawn(async move {
                     if let Ok(rect) = event.data().get_client_rect().await {
                         measured.set((rect.size.width, rect.size.height));
+                        let mut origin = shell.origin;
+                        origin.set((rect.origin.x, rect.origin.y));
                     }
                 });
             },
@@ -1033,7 +1466,7 @@ pub fn AppShell(
                 }
             },
             onkeydown: move |event| {
-                if shell.key(&chord_of(&event)) {
+                if shell.press_key(&chord_of(&event)) {
                     event.prevent_default();
                     event.stop_propagation();
                 }
@@ -1051,47 +1484,64 @@ pub fn AppShell(
                 let p = event.client_coordinates();
                 shell.released((p.x, p.y));
             },
-            if docked {
-                if let Some(content) = sidebar.clone() {
-                    DockedSidebar { content }
-                }
-            }
+            // The top bar runs across the window (the window's controls, the
+            // two sidebar toggles, the places apps fill); under it the left
+            // sidebar, the frames and the right sidebar.
+            {top}
             div {
-                class: "as-main",
-                style: "position: relative; flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column;",
-                {top}
+                class: "as-middle",
+                style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; flex-direction: row;",
+                if docked {
+                    if let Some(content) = sidebar.clone() {
+                        DockedSidebar { content, rail }
+                    }
+                }
+                // The frames: the app's content (one view, or with tabs on
+                // the stacks, splits and docks of the window's layout).
                 div {
-                    class: "as-body",
-                    style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; overflow: hidden;",
-                    if !tabs_now {
-                        if has_layout {
+                    class: "as-frames",
+                    style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; flex-direction: column;",
+                    div {
+                        class: "as-body",
+                        style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; overflow: hidden;",
+                        if !tabs_now {
+                            if has_layout {
+                                SoloView { window: window_for_body.clone() }
+                            } else {
+                                div {
+                                    class: "as-content",
+                                    style: "flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;",
+                                    {children}
+                                }
+                            }
+                        } else if phone {
                             SoloView { window: window_for_body.clone() }
                         } else {
-                            div {
-                                class: "as-content",
-                                style: "flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;",
-                                {children}
-                            }
+                            WindowBody { window: window_for_body.clone() }
                         }
-                    } else if phone {
-                        SoloView { window: window_for_body.clone() }
-                    } else {
-                        WindowBody { window: window_for_body.clone() }
+                        if in_page && tabs_now && !phone {
+                            InPageWindows {}
+                        }
                     }
-                    if in_page && tabs_now && !phone {
-                        InPageWindows {}
+                    if !phone {
+                        if let Some(acc) = accessory.clone() {
+                            DeskAccessory { accessory: acc }
+                        }
                     }
                 }
-                if phone {
-                    PhoneFoot {
-                        accessory: accessory.clone(),
-                        destinations: destinations.clone(),
-                        current: destination.clone(),
-                        on_destination,
-                        action: action.clone(),
+                if right_docked {
+                    if let Some(content) = right_sidebar.clone() {
+                        RightSidebar { content }
                     }
-                } else if let Some(acc) = accessory.clone() {
-                    DeskAccessory { accessory: acc }
+                }
+            }
+            if phone {
+                PhoneFoot {
+                    accessory: accessory.clone(),
+                    destinations: destinations.clone(),
+                    current: destination.clone(),
+                    on_destination,
+                    action: action.clone(),
                 }
             }
             if drawer {
@@ -1103,9 +1553,13 @@ pub fn AppShell(
             if switcher {
                 Switcher {}
             }
+            {layers}
             PopupLayer {}
             SheetLayer {}
             ToastLayer {}
+            if rail {
+                TipLayer {}
+            }
         }
     }
 }

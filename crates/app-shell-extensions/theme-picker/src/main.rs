@@ -1,0 +1,10 @@
+//! The theme picker as a process: the same `ThemePicker` an app links in,
+//! served over vox to the host that started it (`extension.toml`'s
+//! `[entry]`). Run by hand it says so and exits.
+
+use architect_extensions::guest::{Guest, GuestError};
+use architect_extensions_dioxus::guest::GuestExt as _;
+
+fn main() -> Result<(), GuestError> {
+    Guest::extension(&app_shell_theme_picker::ThemePicker).serve()
+}

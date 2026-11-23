@@ -4,7 +4,7 @@
 use dioxus::prelude::*;
 
 use super::icons::{self, IconView};
-use super::kinds::{TabCtx, TabKind};
+use super::kinds::{TabCtx, TabHooks, TabKind};
 use super::popup::MenuItem;
 use super::shell::{Gesture, Shell, Zone, use_shell};
 use crate::commands::Command;
@@ -60,6 +60,14 @@ pub fn StackView(group: Group, window: WindowId) -> Element {
 /// A tab's content: its kind's render, in a component of its own.
 #[component]
 pub fn TabBody(kind: Option<TabKind>, ctx: TabCtx) -> Element {
+    let hooks = try_use_context::<TabHooks>();
+    if let Some(around) = hooks.as_ref().and_then(|h| h.around.clone()) {
+        around(&ctx);
+    }
+    let header = hooks
+        .as_ref()
+        .and_then(|h| h.header.clone())
+        .and_then(|f| f(&ctx));
     let body = match &kind {
         Some(kind) => (kind.render)(ctx.clone()),
         None => rsx! {
@@ -74,6 +82,13 @@ pub fn TabBody(kind: Option<TabKind>, ctx: TabCtx) -> Element {
             class: "as-tab-body",
             "data-pane": "{ctx.pane.id.0}",
             style: "flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;",
+            if let Some(header) = header {
+                div {
+                    class: "as-tab-header",
+                    style: "flex: none; display: flex; align-items: center; gap: 4px; min-width: 0; padding: 2px 6px; border-bottom: 1px solid var(--as-border); background-color: var(--as-surface);",
+                    {header}
+                }
+            }
             {body}
         }
     }
@@ -198,7 +213,14 @@ fn TabButton(
     icons_only: bool,
 ) -> Element {
     let shell = use_shell();
+    let hooks = try_use_context::<TabHooks>();
     let icon = shell.kind(&view).map_or(icons::FILE, |k| k.icon);
+    let this = shell.layout.read().pane(&pane).cloned();
+    let badge = hooks
+        .as_ref()
+        .and_then(|h| h.badge.clone())
+        .zip(this.as_ref())
+        .and_then(|(f, p)| f(p));
     let dragging = shell.dragging();
     let hover = *shell.hover.read();
     let before = matches!(hover, Some(h) if h.zone == Zone::Bar(group, index));
@@ -238,11 +260,24 @@ fn TabButton(
             oncontextmenu: move |event| {
                 event.prevent_default();
                 let p = event.client_coordinates();
-                shell.menu(p.x, p.y, tab_menu(&menu_pane, pinned));
+                let mut items = tab_menu(&menu_pane, pinned);
+                if let Some(f) = hooks.as_ref().and_then(|h| h.menu.clone())
+                    && let Some(p) = shell.layout.peek().pane(&menu_pane)
+                {
+                    let more = f(p);
+                    if !more.is_empty() {
+                        items.push(MenuItem::separator());
+                        items.extend(more);
+                    }
+                }
+                shell.menu(p.x, p.y, items);
             },
             IconView { icon }
             if !icons_only {
                 span { style: "overflow: hidden; white-space: nowrap; min-width: 0; flex: 0 1 auto;", "{title}" }
+                if let Some(badge) = badge {
+                    span { class: "as-tab-badge", style: "flex: none; display: inline-flex; align-items: center;", {badge} }
+                }
                 if pinned {
                     IconView { icon: icons::PIN, size: 11.0 }
                 } else {

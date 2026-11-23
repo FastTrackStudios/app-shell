@@ -20,7 +20,13 @@ pub const VARIABLES: &[(&str, &str)] = &[
     // The accent: the active tab's mark, a drop's highlight.
     ("--as-accent", "#6366f1"),
     ("--as-accent-soft", "rgba(99, 102, 241, 0.28)"),
+    // Text on the accent (a badge, a primary button).
+    ("--as-accent-text", "#ffffff"),
     ("--as-danger", "#ef4444"),
+    // What lifts off the page: a button over it, and what floats over
+    // everything (a menu, a popover, a floating pane).
+    ("--as-shadow-lift", "0 6px 20px rgba(0, 0, 0, 0.35)"),
+    ("--as-shadow-float", "0 16px 44px rgba(0, 0, 0, 0.55)"),
     // Sizes.
     (
         "--as-font",
@@ -48,6 +54,13 @@ pub const VARIABLES: &[(&str, &str)] = &[
     ("--as-light-zoom", "#28c840"),
     ("--as-light-off", "#4a4a50"),
     ("--as-search-bg", "rgba(255, 255, 255, 0.06)"),
+    // A row under the pointer, pressed, and the keyboard's ring.
+    ("--as-hover", "rgba(255, 255, 255, 0.05)"),
+    ("--as-pressed", "rgba(255, 255, 255, 0.1)"),
+    ("--as-focus", "var(--as-accent)"),
+    // The scrollbars' thumb, and under the pointer.
+    ("--as-scrollbar", "rgba(255, 255, 255, 0.16)"),
+    ("--as-scrollbar-hover", "rgba(255, 255, 255, 0.3)"),
 ];
 
 /// The light theme's colours (the sizes are the defaults').
@@ -62,6 +75,8 @@ pub const LIGHT: &[(&str, &str)] = &[
     ("--as-accent", "#4f46e5"),
     ("--as-accent-soft", "rgba(79, 70, 229, 0.18)"),
     ("--as-danger", "#dc2626"),
+    ("--as-shadow-lift", "0 6px 20px rgba(0, 0, 0, 0.12)"),
+    ("--as-shadow-float", "0 16px 44px rgba(0, 0, 0, 0.18)"),
     ("--as-topbar-bg", "#fafafa"),
     ("--as-sidebar-bg", "rgba(244, 244, 245, 0.92)"),
     ("--as-selected", "rgba(0, 0, 0, 0.07)"),
@@ -69,6 +84,10 @@ pub const LIGHT: &[(&str, &str)] = &[
     ("--as-heading", "#a1a1aa"),
     ("--as-light-off", "#d4d4d8"),
     ("--as-search-bg", "rgba(0, 0, 0, 0.05)"),
+    ("--as-hover", "rgba(0, 0, 0, 0.04)"),
+    ("--as-pressed", "rgba(0, 0, 0, 0.08)"),
+    ("--as-scrollbar", "rgba(0, 0, 0, 0.2)"),
+    ("--as-scrollbar-hover", "rgba(0, 0, 0, 0.35)"),
 ];
 
 /// The values the shell's root sets.
@@ -127,6 +146,28 @@ impl Theme {
             .map(|(_, v)| v.as_str())
     }
 
+    /// `css` with each `var(--as-…)` in it replaced by this theme's value
+    /// (else the default's): what an SVG's presentation attributes and an
+    /// image's colours need, which take no CSS variables.
+    #[must_use]
+    pub fn resolve(&self, css: &str) -> String {
+        let mut out = css.to_owned();
+        for _ in 0..4 {
+            let Some(start) = out.find("var(") else { break };
+            let Some(len) = out[start..].find(')') else { break };
+            let inner = &out[start + 4..start + len];
+            let (name, fallback) = inner.split_once(',').unwrap_or((inner, ""));
+            let name = name.trim();
+            let value = self
+                .get(name)
+                .or_else(|| VARIABLES.iter().find(|(k, _)| *k == name).map(|(_, v)| *v))
+                .unwrap_or(fallback.trim())
+                .to_owned();
+            out.replace_range(start..=start + len, &value);
+        }
+        out
+    }
+
     /// As declarations for a `style` attribute: `--as-bg: #18181b; …`.
     #[must_use]
     pub fn style(&self) -> String {
@@ -135,6 +176,19 @@ impl Theme {
             .map(|(k, v)| format!("{k}: {v};"))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+
+    #[test]
+    fn a_variable_is_its_value() {
+        let t = Theme::dark().set("--as-muted", "#a1a1aa");
+        assert_eq!(t.resolve("var(--as-muted)"), "#a1a1aa");
+        assert_eq!(t.resolve("#fff"), "#fff");
+        assert_eq!(t.resolve("var(--no-such, red)"), "red");
     }
 }
 

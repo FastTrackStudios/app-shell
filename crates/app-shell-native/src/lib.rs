@@ -52,6 +52,10 @@ use futures_util::StreamExt;
 #[cfg(target_os = "macos")]
 use dioxus_native::winit::platform::macos::ApplicationHandlerExtMacOS;
 
+pub mod net;
+pub mod shot;
+pub mod telemetry;
+
 pub use dioxus_native::winit;
 
 /// How the main window opens.
@@ -63,6 +67,14 @@ pub struct Config {
     /// Whether the system draws the windows' frames. Off (the default):
     /// the shell's title bar is the frame, its buttons the window's.
     pub system_decorations: bool,
+    /// The name of a local control socket to answer on (`shot <path.png>`:
+    /// the app paints its window to a file; [`shot`]). `None`, the
+    /// default: none.
+    pub control: Option<String>,
+    /// The app's id on Linux (Wayland's app id, X11's class) for every
+    /// window it opens: what a window manager's rules match. `None`: the
+    /// platform's default (the program's name).
+    pub app_id: Option<String>,
 }
 
 impl Default for Config {
@@ -71,6 +83,8 @@ impl Default for Config {
             title: "App".to_owned(),
             size: (1280.0, 800.0),
             system_decorations: false,
+            control: None,
+            app_id: None,
         }
     }
 }
@@ -82,6 +96,16 @@ impl Default for Config {
 /// main one with the app's layout signal, a pop-out's with
 /// `app_shell::ui::use_window_layout()` and its `window`.
 pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Config) {
+    shot::start_clock();
+    // blitz-net loads on Tokio, as dioxus-native's launch does: the app's
+    // runtime when it entered one, else one here for the app's life.
+    let runtime = tokio::runtime::Handle::try_current().is_err().then(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("a Tokio runtime for the app's loads")
+    });
+    let _entered = runtime.as_ref().map(tokio::runtime::Runtime::enter);
     let event_loop = blitz_shell::create_default_event_loop();
     let winit_proxy = event_loop.create_proxy();
     // The main window's events go to dioxus-native's queue; the pop-outs'
@@ -95,8 +119,11 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         open: RefCell::new(Vec::new()),
         hub: LayoutHub::new(),
         decorated: config.system_decorations,
+        app_id: config.app_id.clone(),
         focus: RefCell::new(Vec::new()),
         sizes: RefCell::new(Vec::new()),
+        shots: Rc::new(RefCell::new(config.control.as_deref().map(shot::serve))),
+        net: net::AppNetProvider::shared(&proxy),
     });
     let vdom = VirtualDom::new_with_props(
         MainRoot,
@@ -105,13 +132,21 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
             desk: DeskHandle(desk.clone()),
         },
     );
-    let doc = DioxusDocument::new(vdom, document_config());
+    // In context too, as dioxus-native's launch puts it, for what loads
+    // through the document's provider from a component.
+    vdom.provide_root_context(Arc::clone(&desk.net));
+    let doc = DioxusDocument::new(vdom, document_config(&desk.net));
+    // The main window's document, for shots (`shot`).
+    let live = shot::LiveDocument(doc.inner.clone());
+    doc.vdom
+        .in_scope(ScopeId::ROOT, move || provide_context(live));
     let attributes = frame(
         WindowAttributes::default()
             .with_title(config.title.clone())
             .with_surface_size(LogicalSize::new(config.size.0, config.size.1)),
         config.system_decorations,
     );
+    let attributes = named(attributes, config.app_id.as_deref());
     let window =
         WindowConfig::with_attributes(Box::new(doc), DioxusNativeWindowRenderer::new(), attributes);
     let app = App {
@@ -119,6 +154,7 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
         desk,
         popout,
         popouts: HashMap::new(),
+        closed: Vec::new(),
         own,
         own_queue,
     };
@@ -127,10 +163,12 @@ pub fn launch(main: fn() -> Element, popout: fn(WindowId) -> Element, config: Co
     }
 }
 
-/// What a window's document is made with: Blitz's HTML parser, so
+/// What a window's document is made with: the app's loads (`net`) and
+/// Blitz's HTML parser, so
 /// `dangerous_inner_html` makes nodes.
-fn document_config() -> DocumentConfig {
+fn document_config(net: &Arc<dyn blitz_traits::net::NetProvider>) -> DocumentConfig {
     DocumentConfig {
+        net_provider: Some(Arc::clone(net)),
         html_parser_provider: Some(Arc::new(blitz_html::HtmlProvider)),
         ..Default::default()
     }
@@ -157,10 +195,16 @@ struct Desk {
     open: RefCell<Vec<(WindowId, Arc<dyn OsWindow>)>>,
     hub: LayoutHub,
     decorated: bool,
+    /// Every window's app id on Linux ([`Config::app_id`]).
+    app_id: Option<String>,
     /// Each window's root, told when its window gains or loses the focus.
     focus: RefCell<Vec<(OsId, UnboundedSender<bool>)>>,
     /// Each window's root, told its window's new size (logical points).
     sizes: RefCell<Vec<(OsId, UnboundedSender<Size>)>>,
+    /// Every window's loads (`net`): one provider, as one browser has.
+    net: Arc<dyn blitz_traits::net::NetProvider>,
+    /// Shots asked on the control socket, taken by the main root.
+    shots: Rc<RefCell<Option<futures_channel::mpsc::UnboundedReceiver<shot::Job>>>>,
 }
 
 impl Desk {
@@ -236,6 +280,21 @@ fn frame(attributes: WindowAttributes, decorated: bool) -> WindowAttributes {
     {
         attributes.with_decorations(false)
     }
+}
+
+/// The window's app id on Linux (Wayland's app id, X11's class), when the
+/// app gives one.
+fn named(attributes: WindowAttributes, app_id: Option<&str>) -> WindowAttributes {
+    #[cfg(all(target_os = "linux", not(target_os = "android")))]
+    if let Some(id) = app_id {
+        return attributes.with_platform_attributes(Box::new(
+            dioxus_native::winit::platform::wayland::WindowAttributesWayland::default()
+                .with_name(id, id),
+        ));
+    }
+    #[cfg(not(all(target_os = "linux", not(target_os = "android"))))]
+    let _ = app_id;
+    attributes
 }
 
 /// Puts macOS's traffic lights in the top bar's row; nothing elsewhere.
@@ -337,6 +396,7 @@ fn MainRoot(props: MainRootProps) -> Element {
         fit_lights(main.as_ref(), seen.decorated);
     });
     use_frame(&desk, &window, Callback::new(move |()| quit.ask(Ask::Quit)));
+    shot::use_shots(desk.shots.clone());
     (props.app)()
 }
 
@@ -377,6 +437,11 @@ struct App {
     desk: Rc<Desk>,
     popout: fn(WindowId) -> Element,
     popouts: HashMap<OsId, Open>,
+    /// Pop-outs closed, hidden (minimised on Wayland) and kept until the
+    /// app ends: destroying a
+    /// window's Vulkan swapchain while the app runs crashed NVIDIA's
+    /// driver (a null call in `NativeSwapchain`'s drop).
+    closed: Vec<Open>,
     own: BlitzShellProxy,
     own_queue: Receiver<BlitzShellEvent>,
 }
@@ -436,6 +501,7 @@ impl App {
                 .with_surface_size(LogicalSize::new(f64::from(w), f64::from(h))),
             self.desk.decorated,
         );
+        attributes = named(attributes, self.desk.app_id.as_deref());
         if let Some(b) = bounds {
             attributes =
                 attributes.with_position(LogicalPosition::new(f64::from(b.x), f64::from(b.y)));
@@ -448,7 +514,8 @@ impl App {
                 desk: DeskHandle(self.desk.clone()),
             },
         );
-        let doc = DioxusDocument::new(vdom, document_config());
+        vdom.provide_root_context(Arc::clone(&self.desk.net));
+        let doc = DioxusDocument::new(vdom, document_config(&self.desk.net));
         let config = WindowConfig::with_attributes(
             Box::new(doc),
             DioxusNativeWindowRenderer::new(),
@@ -486,7 +553,11 @@ impl App {
     fn forget(&mut self, os: OsId) {
         if let Some(open) = self.popouts.remove(&os) {
             self.desk.open.borrow_mut().retain(|(w, _)| *w != open.id);
-            drop(open);
+            // Wayland has no hiding a window: minimised, and its document
+            // stopped from drawing (its panes are gone from the layout).
+            open.view.window.set_visible(false);
+            open.view.window.set_minimized(true);
+            self.closed.push(open);
         }
     }
 

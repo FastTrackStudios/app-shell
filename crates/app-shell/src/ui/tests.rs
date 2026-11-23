@@ -247,6 +247,7 @@ fn the_sidebar_edge_dragged_resizes_it_within_bounds_and_tells_the_app() {
         g.set(Some(Gesture::Sidebar {
             start: (220.0, 10.0),
             width: 220.0,
+            rail: false,
         }));
         s.moved((300.0, 10.0));
         assert!((*s.sidebar_w.peek() - 300.0).abs() < 0.01);
@@ -263,22 +264,91 @@ fn the_sidebar_edge_dragged_resizes_it_within_bounds_and_tells_the_app() {
         heard,
         vec![SidebarState {
             open: true,
-            width: super::SIDEBAR_MAX
+            width: super::SIDEBAR_MAX,
+            rail: Some(false),
         }]
     );
 }
 
 #[test]
-fn toggle_sidebar_hides_and_shows_it_on_a_desktop() {
+fn the_sidebar_edge_dragged_narrow_folds_it_to_the_rail_and_back() {
+    SIDEBAR.with(|s| s.borrow_mut().clear());
+    run(tabs(&["a"]), |s| {
+        let mut g = s.gesture;
+        g.set(Some(Gesture::Sidebar {
+            start: (220.0, 10.0),
+            width: 220.0,
+            rail: false,
+        }));
+        s.moved((60.0, 10.0));
+        assert!(s.sidebar_folded(), "past the snap it is the rail");
+        assert!(
+            (*s.sidebar_w.peek() - 220.0).abs() < 0.01,
+            "its width kept for unfolding"
+        );
+        s.released((60.0, 10.0));
+        g.set(Some(Gesture::Sidebar {
+            start: (52.0, 10.0),
+            width: 220.0,
+            rail: true,
+        }));
+        s.moved((300.0, 10.0));
+        assert!(!s.sidebar_folded());
+        assert!((*s.sidebar_w.peek() - 300.0).abs() < 0.01);
+        s.released((300.0, 10.0));
+    });
+    let heard = SIDEBAR.with(|s| s.borrow().iter().map(|x| x.rail).collect::<Vec<_>>());
+    assert_eq!(heard, vec![Some(true), Some(false)]);
+}
+
+#[test]
+fn a_press_on_the_edge_that_does_not_move_chooses_nothing() {
+    SIDEBAR.with(|s| s.borrow_mut().clear());
+    run(tabs(&["a"]), |s| {
+        let mut g = s.gesture;
+        g.set(Some(Gesture::Sidebar {
+            start: (220.0, 10.0),
+            width: 220.0,
+            rail: false,
+        }));
+        s.moved((222.0, 10.0));
+        s.released((222.0, 10.0));
+        assert_eq!(*s.sidebar_rail.peek(), None, "still the window's to say");
+    });
+    assert!(SIDEBAR.with(|s| s.borrow().is_empty()));
+}
+
+#[test]
+fn toggle_sidebar_folds_it_to_the_rail_and_back_on_a_desktop() {
     SIDEBAR.with(|s| s.borrow_mut().clear());
     run(tabs(&["a"]), |s| {
         s.command(crate::Command::ToggleSidebar);
-        assert!(!*s.sidebar_open.peek());
+        assert!(s.sidebar_folded() && *s.sidebar_open.peek());
         s.command(crate::Command::ToggleSidebar);
-        assert!(*s.sidebar_open.peek());
+        assert!(!s.sidebar_folded());
+        // Hidden by the app, the button brings it back at full width.
+        s.set_sidebar(SidebarState {
+            open: false,
+            ..s.sidebar_state()
+        });
+        s.command(crate::Command::ToggleSidebar);
+        assert!(*s.sidebar_open.peek() && !s.sidebar_folded());
     });
-    let heard = SIDEBAR.with(|s| s.borrow().iter().map(|x| x.open).collect::<Vec<_>>());
-    assert_eq!(heard, vec![false, true]);
+    let heard = SIDEBAR.with(|s| {
+        s.borrow()
+            .iter()
+            .map(|x| (x.open, x.rail))
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(
+        heard,
+        vec![
+            (true, Some(true)),
+            (true, Some(false)),
+            (false, Some(false)),
+            (true, Some(false))
+        ]
+    );
 }
 
 #[derive(Props, Clone, PartialEq)]
@@ -427,4 +497,175 @@ fn the_form_follows_the_width() {
     assert_eq!(FormFactor::for_width(599.0), FormFactor::Phone);
     assert_eq!(FormFactor::for_width(600.0), FormFactor::Desktop);
     assert_eq!(FormFactor::for_width(1280.0), FormFactor::Desktop);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct AroundSaw(&'static str);
+
+#[allow(non_snake_case)]
+fn HooksHarness() -> Element {
+    let layout = use_signal(|| tabs(&["a", "b"]));
+    let kinds = TabKinds::new().with(TabKind::new("v", "V", |ctx: TabCtx| {
+        // What `around` provided, read by the kind's own render.
+        let saw = try_use_context::<AroundSaw>().map_or("none", |s| s.0);
+        rsx! { "body {ctx.pane.id.0} saw {saw}" }
+    }));
+    use_context_provider(|| {
+        super::TabHooks::new()
+            .around(|_ctx| {
+                use_context_provider(|| AroundSaw("around"));
+            })
+            .header(|ctx| {
+                let id = ctx.pane.id.0.clone();
+                Some(rsx! { "header {id}" })
+            })
+            .badge(|pane| (pane.id.0 == "b").then(|| rsx! { "badge-b" }))
+    });
+    rsx! {
+        AppShell { layout, kinds, tabs: Tabs::On, form: FormFactor::Desktop }
+    }
+}
+
+#[test]
+fn tab_hooks_wrap_the_content_head_it_and_badge_the_tab() {
+    let mut dom = VirtualDom::new(HooksHarness);
+    dom.rebuild_in_place();
+    for _ in 0..3 {
+        dom.process_events();
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+    }
+    let html = dioxus_ssr::render(&dom);
+    assert!(html.contains("body a saw around"), "{html}");
+    assert!(html.contains("header a"), "{html}");
+    assert!(html.contains("badge-b"), "{html}");
+}
+
+#[test]
+fn a_panes_view_state_is_kept_without_history() {
+    let mut ws = tabs(&["a"]);
+    let a = PaneId::new("a");
+    ws.set_view_state(&a, "zoom=2".into()).unwrap();
+    let p = ws.pane(&a).unwrap();
+    assert_eq!(p.view_state, "zoom=2");
+    assert!(p.history.back.is_empty());
+    assert!(
+        ws.set_view_state(&PaneId::new("nope"), String::new())
+            .is_err()
+    );
+}
+
+#[test]
+fn bound_keys_hold_in_their_tabs_kind_before_the_keymap_and_the_windows_after() {
+    use super::{BoundKey, KeyScope};
+    use crate::commands::KeyChord;
+    use std::rc::Rc;
+    let heard: Rc<RefCell<Vec<String>>> = Rc::default();
+    let h = Rc::clone(&heard);
+    let (after, _) = run(tabs(&["a", "b"]), move |shell| {
+        let key = |text: &str| KeyChord::parse(text, false).unwrap();
+        let said = |what: &'static str, h: &Rc<RefCell<Vec<String>>>| {
+            let h = Rc::clone(h);
+            move |pane: Option<&Pane>| {
+                let id = pane.map(|p| p.id.0.clone()).unwrap_or_default();
+                h.borrow_mut().push(format!("{what} {id}"));
+                true
+            }
+        };
+        shell.bind_keys(
+            "ext",
+            vec![
+                // The active tab's kind's ⌘W wins over the keymap's.
+                BoundKey::new(key("⌘W"), KeyScope::Kind("v".into()), said("undo", &h)),
+                // Another kind's keys do not hold here.
+                BoundKey::new(key("⌘K"), KeyScope::Kind("other".into()), said("never", &h)),
+                // The window's come after the keymap: ⇧⌘T is its.
+                BoundKey::new(key("⇧⌘T"), KeyScope::Window, said("never", &h)),
+                BoundKey::new(key("⌘J"), KeyScope::Window, said("window", &h)),
+                // One that does not take the key lets it go on.
+                BoundKey::new(key("A"), KeyScope::Kind("v".into()), |_| false),
+            ],
+        );
+        assert!(shell.press_key(&key("⌘W")));
+        assert!(shell.press_key(&key("⌘J")));
+        assert!(!shell.press_key(&key("A")));
+        shell.press_key(&key("⌘K"));
+        shell.bind_keys("ext", Vec::new());
+        assert!(!shell.press_key(&key("⌘J")));
+    });
+    assert_eq!(*heard.borrow(), ["undo a", "window a"]);
+    // ⌘W was the binding's: no tab closed.
+    assert!(after.pane(&PaneId::new("a")).is_some());
+}
+
+thread_local! {
+    static OVERLAY: RefCell<Option<(super::PaletteOverlay, bool, &'static str)>> = const { RefCell::new(None) };
+}
+
+#[allow(non_snake_case)]
+fn OverlayOpener() -> Element {
+    let shell = use_shell();
+    use_hook(move || {
+        let Some((overlay, drawn, query)) = OVERLAY.with(|o| *o.borrow()) else {
+            return;
+        };
+        if drawn {
+            shell.set_palette_view(
+                overlay,
+                Some(Callback::new(|()| rsx! { "drawn by the extension" })),
+            );
+        }
+        shell.open_overlay(overlay, query);
+    });
+    rsx! { "content" }
+}
+
+fn overlay_html(overlay: super::PaletteOverlay, drawn: bool, query: &'static str) -> String {
+    OVERLAY.with(|o| *o.borrow_mut() = Some((overlay, drawn, query)));
+    let mut dom = VirtualDom::new(|| {
+        rsx! {
+            AppShell { form: FormFactor::Desktop, OverlayOpener {} }
+        }
+    });
+    dom.rebuild_in_place();
+    for _ in 0..3 {
+        dom.process_events();
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+    }
+    dioxus_ssr::render(&dom)
+}
+
+#[test]
+fn a_view_draws_a_palette_overlay_in_the_shells_place() {
+    use super::PaletteOverlay;
+    let drawn = overlay_html(PaletteOverlay::Palette, true, "");
+    assert!(drawn.contains("drawn by the extension"), "{drawn}");
+    assert!(!drawn.contains("Search for anything"), "{drawn}");
+    // Without one, the shell's own, its field holding the query.
+    let own = overlay_html(PaletteOverlay::QuickOpen, false, "theme:");
+    assert!(own.contains("Open anything"), "{own}");
+    assert!(own.contains("value=\"theme:\""), "{own}");
+    assert_eq!(
+        PaletteOverlay::parse("quick-open"),
+        Some(PaletteOverlay::QuickOpen)
+    );
+    assert_eq!(PaletteOverlay::Palette.name(), "palette");
+}
+
+#[allow(non_snake_case)]
+fn LayerReadingTheShell() -> Element {
+    let shell = use_shell();
+    let tabs = shell.layout.peek().panes.len();
+    rsx! { "a layer over {tabs} tabs" }
+}
+
+#[test]
+fn layers_draw_at_the_root_in_the_shells_context_from_the_first_render() {
+    let mut dom = VirtualDom::new(|| {
+        rsx! {
+            AppShell { form: FormFactor::Desktop, layers: rsx! { LayerReadingTheShell {} }, "content" }
+        }
+    });
+    dom.rebuild_in_place();
+    let html = dioxus_ssr::render(&dom);
+    assert!(html.contains("a layer over 0 tabs"), "{html}");
 }
