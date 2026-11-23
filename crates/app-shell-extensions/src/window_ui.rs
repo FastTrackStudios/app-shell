@@ -469,6 +469,9 @@ pub fn ExtensionPopout(
     window: app_shell::WindowId,
     #[props(default)] kinds: app_shell::ui::TabKinds,
     #[props(default)] theme: app_shell::Theme,
+    /// Whether it draws its layout's splits and tabs (`Tabs::Off`, the
+    /// default: its active tab alone).
+    #[props(default)] tabs: app_shell::ui::Tabs,
 ) -> Element {
     let layout = app_shell::ui::use_window_layout();
     let ui = main_ui();
@@ -478,6 +481,6 @@ pub fn ExtensionPopout(
         ui.register_kinds(&mut kinds);
     }
     rsx! {
-        app_shell::ui::AppShell { layout, kinds, window, theme }
+        app_shell::ui::AppShell { layout, kinds, window, theme, tabs }
     }
 }
