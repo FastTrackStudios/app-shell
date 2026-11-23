@@ -7,6 +7,7 @@
 //! events for every drag (no HTML drag and drop), and nothing measured
 //! inside an event handler.
 
+mod bar;
 mod chrome;
 mod foot;
 pub mod icons;
@@ -23,6 +24,10 @@ mod tests;
 mod window;
 mod windows;
 
+pub use bar::{
+    BarContributions, BarFiller, BarItem, BarPlace, BarRender, BarSpan, use_top_bar_item,
+    use_top_bar_span,
+};
 pub use chrome::{
     BarButton, DragArea, LIGHT, LIGHT_GAP, LIGHTS_LEFT, LIGHTS_WIDTH, SearchField, TOP_BAR_H,
     ToolbarButton, ToolbarGroup, TopBar, WindowLights,
@@ -40,9 +45,9 @@ pub use shell::{
     window_title,
 };
 pub use sidebar::{
-    SIDEBAR_FOLD_BELOW, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_PAGE_ROOM, SIDEBAR_RAIL, SIDEBAR_SNAP,
-    SIDEBAR_WIDTH, ScrollArea, Sidebar, SidebarItem, SidebarMode, SidebarSection, SidebarState,
-    SidebarSwitcher, use_sidebar_mode,
+    RIGHT_SIDEBAR_WIDTH, RightSidebarState, SIDEBAR_FOLD_BELOW, SIDEBAR_MAX, SIDEBAR_MIN,
+    SIDEBAR_PAGE_ROOM, SIDEBAR_RAIL, SIDEBAR_SNAP, SIDEBAR_WIDTH, ScrollArea, Sidebar, SidebarItem,
+    SidebarMode, SidebarSection, SidebarState, SidebarSwitcher, use_sidebar_mode,
 };
 pub use split::NodeView;
 pub use stack::{StackView, TabBar, TabBody};

@@ -3,14 +3,20 @@
 //! nested two deep, a folded section, enough rows to scroll, a footer
 //! that draws itself small on the rail) and a content area that scrolls.
 //!
+//! The top bar runs across the window with both sidebars' toggles; the
+//! right sidebar holds an inspector; a page puts an item in the bar's
+//! trailing place (every page) and takes over its center ("Sessions":
+//! a session's song tabs in place of the search).
+//!
 //! In a browser: `dx serve -p app-shell-gallery --platform web --features web`.
 //! `#rail` starts the sidebar folded to the rail, `#focus` puts the
-//! keyboard on its first row.
+//! keyboard on its first row, `#sessions` opens on the page that takes
+//! over the center.
 
 use app_shell::ui::{
-    AppShell, Destination, ScrollArea, SearchField, Sidebar, SidebarItem, SidebarMode,
-    SidebarSection, SidebarState, SidebarSwitcher, ToolbarButton, ToolbarGroup, TopBar, icons,
-    use_shell, use_sidebar_mode,
+    AppShell, BarPlace, BarSpan, Destination, ScrollArea, SearchField, Sidebar, SidebarItem,
+    SidebarMode, SidebarSection, SidebarState, SidebarSwitcher, ToolbarButton, ToolbarGroup,
+    TopBar, icons, use_shell, use_sidebar_mode, use_top_bar_item, use_top_bar_span,
 };
 use dioxus::prelude::*;
 
@@ -85,7 +91,12 @@ fn app() -> Element {
                         }
                     }
                 },
-                StartFromHash {}
+                right_sidebar: rsx! { Inspector { page: page() } },
+                StartFromHash { page }
+                Synced {}
+                if page() == "sessions" {
+                    SessionTabs {}
+                }
                 Content { page: page() }
             }
         }
@@ -129,7 +140,8 @@ fn Account() -> Element {
 
 /// `#rail` folds the sidebar; `#focus` puts the keyboard on its first row.
 #[component]
-fn StartFromHash() -> Element {
+fn StartFromHash(page: Signal<String>) -> Element {
+    let mut page = page;
     let shell = use_shell();
     use_future(move || async move {
         let hash = document::eval("return window.location.hash")
@@ -142,6 +154,9 @@ fn StartFromHash() -> Element {
                 rail: Some(true),
                 ..shell.sidebar_state()
             });
+        }
+        if hash.contains("sessions") {
+            page.set("sessions".to_owned());
         }
         if hash.contains("focus") {
             let _ = document::eval(
@@ -164,6 +179,53 @@ fn Content(page: String) -> Element {
                     key: "{i}",
                     style: "height: 40px; display: flex; align-items: center; padding: 0 12px; margin-bottom: 6px; border-radius: 8px; background-color: var(--as-surface); border: 1px solid var(--as-border);",
                     "Row {i + 1}"
+                }
+            }
+        }
+    }
+}
+
+/// Every page: a sync status in the bar's trailing place.
+#[component]
+fn Synced() -> Element {
+    use_top_bar_item("gallery/sync", BarPlace::Trailing, 0, || {
+        rsx! {
+            span { style: "font-size: 12px; color: var(--as-muted); padding: 0 8px;", "Synced" }
+        }
+    });
+    rsx! {}
+}
+
+/// "Sessions": the bar's center is the session's song tabs.
+#[component]
+fn SessionTabs() -> Element {
+    use_top_bar_span("gallery/session-tabs", BarSpan::Center, || {
+        rsx! {
+            div { style: "display: flex; gap: 4px;",
+                for (i, song) in ["Intro", "Know Me", "Fire", "Hey!"].iter().enumerate() {
+                    span {
+                        key: "{i}",
+                        style: if i == 1 { "padding: 4px 10px; border-radius: 6px; background-color: var(--as-selected); font-weight: 600;" } else { "padding: 4px 10px; border-radius: 6px; color: var(--as-muted);" },
+                        "{song}"
+                    }
+                }
+            }
+        }
+    });
+    rsx! {}
+}
+
+/// The right sidebar: what is selected.
+#[component]
+fn Inspector(page: String) -> Element {
+    rsx! {
+        ScrollArea { style: "padding: 8px 14px;".to_owned(),
+            div { style: "font-size: 11px; text-transform: uppercase; color: var(--as-muted); margin-bottom: 8px;", "Inspector" }
+            div { style: "font-weight: 600; margin-bottom: 6px;", "{page}" }
+            for (k, v) in [("Kind", "Folder"), ("Items", "48"), ("Modified", "Today")] {
+                div { key: "{k}", style: "display: flex; justify-content: space-between; padding: 4px 0; color: var(--as-muted);",
+                    span { "{k}" }
+                    span { style: "color: var(--as-text);", "{v}" }
                 }
             }
         }

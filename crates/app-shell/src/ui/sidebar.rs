@@ -21,7 +21,6 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use super::chrome::BarButton;
-use super::chrome::{DragArea, WindowLights};
 use super::icons::{self, Icon, IconView};
 use super::shell::{Gesture, use_shell};
 
@@ -161,14 +160,8 @@ pub(crate) fn DockedSidebar(content: Element, rail: bool) -> Element {
                 class: "as-sidebar",
                 "data-sidebar": mode,
                 style: "flex: 1 1 0px; min-width: 0; height: 100%; border-right: 1px solid var(--as-border); {PANEL}",
-                if !rail {
-                    DragArea {
-                        style: "flex: none; height: var(--as-topbar-h); min-width: 0;".to_owned(),
-                        WindowLights {}
-                    }
-                } else {
-                    div { style: "flex: none; height: 6px;" }
-                }
+                // Under the top bar, which holds the window's lights.
+                div { style: "flex: none; height: 6px;" }
                 {content}
             }
             div {
@@ -186,6 +179,72 @@ pub(crate) fn DockedSidebar(content: Element, rail: bool) -> Element {
                 },
                 ondoubleclick: move |_| shell.set_sidebar(SidebarState { open: true, width: SIDEBAR_WIDTH, rail: Some(false) }),
                 div { class: "as-edge-line", style: "width: 2px; height: 100%; background-color: transparent;" }
+            }
+        }
+    }
+}
+
+/// The right sidebar's width to start with, points.
+pub const RIGHT_SIDEBAR_WIDTH: f32 = 280.0;
+
+/// The right sidebar: shown or hidden, and its width. The app's content
+/// for it is its own (an inspector, Now Playing, a thread); the shell
+/// keeps where it is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RightSidebarState {
+    pub open: bool,
+    pub width: f32,
+}
+
+impl Default for RightSidebarState {
+    fn default() -> Self {
+        Self {
+            open: true,
+            width: RIGHT_SIDEBAR_WIDTH,
+        }
+    }
+}
+
+/// The right sidebar's width after its edge moved by `dx` from `width`:
+/// moving left widens it. The page keeps [`SIDEBAR_PAGE_ROOM`].
+pub(crate) fn right_drag(width: f32, dx: f32, viewport_w: f64) -> f32 {
+    (width - dx).clamp(SIDEBAR_MIN, widest(viewport_w))
+}
+
+/// The right sidebar, docked at the window's right under the top bar,
+/// resized from its left edge (a double press there resets it).
+#[component]
+pub(crate) fn RightSidebar(content: Element) -> Element {
+    let shell = use_shell();
+    provide_mode(SidebarMode::Docked);
+    let width = *shell.right_w.read();
+    let dragging = matches!(*shell.gesture.read(), Some(Gesture::RightSidebar { .. }));
+    rsx! {
+        div {
+            class: "as-sidebar-frame as-right-frame",
+            style: "position: relative; flex: none; width: {width}px; height: 100%; display: flex;",
+            div {
+                class: "as-sidebar-edge",
+                role: "separator",
+                "aria-orientation": "vertical",
+                "aria-label": "Resize the right sidebar",
+                "data-dragging": "{dragging}",
+                style: "position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 10; display: flex; justify-content: center;",
+                onpointerdown: move |event| {
+                    event.stop_propagation();
+                    let p = event.client_coordinates();
+                    let mut gesture = shell.gesture;
+                    gesture.set(Some(Gesture::RightSidebar { start: (p.x, p.y), width }));
+                },
+                ondoubleclick: move |_| shell.set_right_sidebar(RightSidebarState { open: true, width: RIGHT_SIDEBAR_WIDTH }),
+                div { class: "as-edge-line", style: "width: 2px; height: 100%; background-color: transparent;" }
+            }
+            div {
+                class: "as-sidebar as-right-sidebar",
+                "data-sidebar": "right",
+                style: "flex: 1 1 0px; min-width: 0; height: 100%; border-left: 1px solid var(--as-border); {PANEL}",
+                div { style: "flex: none; height: 6px;" }
+                {content}
             }
         }
     }

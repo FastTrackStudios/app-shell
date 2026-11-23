@@ -11,6 +11,7 @@
 
 use dioxus::prelude::*;
 
+use super::bar::{BarItems, BarPlace, BarSpan};
 use super::icons::{self, Icon, IconView};
 use super::shell::{FormFactor, use_shell};
 use super::windows::WindowControls;
@@ -144,18 +145,25 @@ fn Slot(style: String, children: Element) -> Element {
     }
 }
 
-/// The top bar: a macOS unified toolbar.
+/// The top bar: one row across the window, over both sidebars.
 ///
-/// From the left: the traffic lights (when no sidebar holds them), the
-/// sidebar button, back and forward, the title or the app's `lead` (a
-/// breadcrumb); the app's `search` centred; its `actions` at the right
-/// (view modes, buttons: [`ToolbarButton`], [`ToolbarGroup`]). Every empty
-/// part moves the window. On a phone the row is the menu button (which
-/// opens the sidebar as a drawer), back, the title and the actions, with
-/// the search on a row of its own under it.
+/// The shell's own controls are always there: the window's (its traffic
+/// lights, or room for the system's), the left sidebar's toggle, back and
+/// forward at the start, the right sidebar's toggle at the end. Between
+/// them are the places apps, pages and extensions fill ([`super::bar`]):
+/// **leading** (the title, or the app's `lead`, then contributed items),
+/// **center** (the app's `search`, then contributed items) and
+/// **trailing** (contributed items, then the app's `actions` and the tab
+/// tools). A filler can take over the center or the whole middle (the
+/// leading, center and trailing places): a song's tabs across the bar.
+/// Every empty part moves the window.
+///
+/// On a phone the row is the menu button (which opens the sidebar as a
+/// drawer), back, the title, the trailing items and the actions, with the
+/// search on a row of its own under it.
 ///
 /// The shell draws one by default (titled by its `title`); pass your own
-/// as the shell's `top_bar` to fill its slots.
+/// as the shell's `top_bar` to set its title, lead, search and actions.
 #[allow(clippy::too_many_arguments)]
 #[component]
 pub fn TopBar(
@@ -177,12 +185,13 @@ pub fn TopBar(
     let shell = use_shell();
     let phone = shell.form() == FormFactor::Phone;
     let has_sidebar = shell.has_sidebar();
-    let sidebar_open = *shell.sidebar_open.read();
+    let has_right = shell.has_right_sidebar() && !phone;
+    let right_open = *shell.right_open.read();
     let tabs = shell.tabs_shown();
-    // The lights are the docked sidebar's at its full width; folded to the
-    // rail, the top bar runs across the window and holds them.
-    let folded = has_sidebar && sidebar_open && !phone && shell.sidebar_folded();
-    let lights_here = !(has_sidebar && sidebar_open && !phone) || folded;
+    let (middle, center_fill) = {
+        let bar = shell.bar.read();
+        (bar.filler(BarSpan::Middle), bar.filler(BarSpan::Center))
+    };
     let layout = shell.layout.read();
     let count = layout.tab_count();
     let active_title = layout
@@ -276,10 +285,11 @@ pub fn TopBar(
                 style: "flex: none; display: flex; flex-direction: column; background-color: var(--as-topbar-bg); border-bottom: 1px solid var(--as-border); {notch}",
                 div {
                     style: "height: var(--as-topbar-h); display: flex; align-items: center; gap: 2px; padding: 0 6px; min-width: 0;",
-                    if lights_here { WindowLights {} }
+                    WindowLights {}
                     {sidebar_button}
                     {nav}
                     DragArea { style: "flex: 1 1 0px; min-width: 0; padding: 0 6px;".to_owned(), {title_view} }
+                    BarItems { place: BarPlace::Trailing }
                     if let Some(actions) = actions {
                         Slot { style: "flex: none; display: flex; align-items: center; gap: 2px;".to_owned(), {actions} }
                     }
@@ -291,30 +301,65 @@ pub fn TopBar(
             }
         };
     }
+    let right_button = rsx! {
+        if has_right {
+            BarButton {
+                icon: icons::PANEL_RIGHT,
+                label: if right_open { "Hide the right sidebar" } else { "Show the right sidebar" },
+                on_press: move |()| shell.command(Command::ToggleRightSidebar),
+            }
+        }
+    };
+    let filled = middle.is_some();
+    let columns = if filled {
+        "minmax(0, auto) minmax(0, 1fr) minmax(0, auto)"
+    } else {
+        "minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr)"
+    };
     rsx! {
         div {
             class: "as-topbar",
             "data-form": "desktop",
-            style: "flex: none; height: var(--as-topbar-h); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr); align-items: center; background-color: var(--as-topbar-bg); border-bottom: 1px solid var(--as-border); min-width: 0;",
+            style: "flex: none; height: var(--as-topbar-h); display: grid; grid-template-columns: {columns}; align-items: center; background-color: var(--as-topbar-bg); border-bottom: 1px solid var(--as-border); min-width: 0;",
             DragArea {
                 style: "min-width: 0; height: 100%; gap: 2px; padding-left: 6px; overflow: hidden;".to_owned(),
-                if lights_here { WindowLights {} }
+                WindowLights {}
                 {sidebar_button}
                 {nav}
                 div { style: "width: 6px; flex: none;" }
-                Slot { style: "min-width: 0; display: flex; align-items: center; overflow: hidden;".to_owned(), {title_view} }
+                if !filled {
+                    Slot { style: "min-width: 0; display: flex; align-items: center; overflow: hidden;".to_owned(), {title_view} }
+                    BarItems { place: BarPlace::Leading }
+                }
             }
-            if let Some(search) = search {
-                Slot { style: "min-width: 0; display: flex; align-items: center; padding: 0 12px;".to_owned(), {search} }
+            if let Some(filler) = middle {
+                Slot {
+                    style: "min-width: 0; height: 100%; display: flex; align-items: center; padding: 0 8px; overflow: hidden;".to_owned(),
+                    {(filler.render)()}
+                }
+            } else if let Some(filler) = center_fill {
+                Slot { style: "min-width: 0; display: flex; align-items: center; padding: 0 12px;".to_owned(), {(filler.render)()} }
+            } else if search.is_some() || !shell.bar.read().items(BarPlace::Center).is_empty() {
+                Slot {
+                    style: "min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 12px;".to_owned(),
+                    if let Some(search) = search {
+                        {search}
+                    }
+                    BarItems { place: BarPlace::Center }
+                }
             } else {
                 DragArea { style: "height: 100%;".to_owned() }
             }
             DragArea {
                 style: "min-width: 0; height: 100%; justify-content: flex-end; gap: 2px; padding-right: 8px;".to_owned(),
-                if let Some(actions) = actions {
-                    Slot { style: "flex: none; display: flex; align-items: center; gap: 2px;".to_owned(), {actions} }
+                if !filled {
+                    BarItems { place: BarPlace::Trailing }
+                    if let Some(actions) = actions {
+                        Slot { style: "flex: none; display: flex; align-items: center; gap: 2px;".to_owned(), {actions} }
+                    }
                 }
                 {tab_tools}
+                {right_button}
             }
         }
     }

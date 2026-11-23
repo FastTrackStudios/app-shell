@@ -5,6 +5,7 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
+use super::bar::{BarContributions, BarFiller, BarItem, BarSpan};
 use super::chrome::TopBar;
 use super::foot::{DeskAccessory, Destination, PhoneFoot, PrimaryAction};
 use super::kinds::{TabKind, TabKinds};
@@ -15,8 +16,8 @@ use super::overlay::{
 use super::popup::MenuAction;
 use super::popup::{MenuItem, Popup, PopupContent, PopupLayer};
 use super::sidebar::{
-    DockedSidebar, DrawerSidebar, SIDEBAR_MAX, SIDEBAR_MIN, SidebarState, Tip, TipLayer,
-    sidebar_drag,
+    DockedSidebar, DrawerSidebar, RightSidebar, RightSidebarState, SIDEBAR_MAX, SIDEBAR_MIN,
+    SidebarState, Tip, TipLayer, right_drag, sidebar_drag,
 };
 use super::stack::DragLayer;
 use super::switcher::Switcher;
@@ -103,6 +104,8 @@ pub(crate) enum Gesture {
         at: (f64, f64),
         live: bool,
     },
+    /// The right sidebar's edge dragged.
+    RightSidebar { start: (f64, f64), width: f32 },
     /// A split's divider dragged: between child `index` and the next.
     Divider {
         split: SplitId,
@@ -173,6 +176,7 @@ struct Hooks {
     on_command: Option<Callback<Command, bool>>,
     on_new_tab: Option<EventHandler<GroupId>>,
     on_sidebar: Option<EventHandler<SidebarState>>,
+    on_right_sidebar: Option<EventHandler<RightSidebarState>>,
     palette: Option<Callback<(), Vec<PaletteItem>>>,
     kinds: TabKinds,
     keymap: KeymapHandle,
@@ -204,6 +208,13 @@ pub struct Shell {
     pub(crate) sidebar_w: Signal<f32>,
     /// Folded to the rail, as chosen (`None`: by the window's width).
     pub(crate) sidebar_rail: Signal<Option<bool>>,
+    /// Whether the app gave a right sidebar.
+    pub(crate) right_given: Signal<bool>,
+    /// The right sidebar: shown, and its width.
+    pub(crate) right_open: Signal<bool>,
+    pub(crate) right_w: Signal<f32>,
+    /// What apps, pages and extensions put in the top bar ([`super::bar`]).
+    pub(crate) bar: Signal<BarContributions>,
     /// Each sidebar section's folding, by its id: kept across the rail,
     /// the drawer and the sidebar coming back.
     pub(crate) section_open: Signal<std::collections::HashMap<String, bool>>,
@@ -295,6 +306,16 @@ impl Shell {
         }
         if command == Command::OpenPalette {
             self.open_palette();
+            return;
+        }
+        if command == Command::ToggleRightSidebar {
+            if self.has_right_sidebar() && self.form() != FormFactor::Phone {
+                let now = self.right_sidebar_state();
+                self.set_right_sidebar(RightSidebarState {
+                    open: !now.open,
+                    ..now
+                });
+            }
             return;
         }
         if command == Command::ToggleSidebar {
@@ -558,6 +579,63 @@ impl Shell {
         }
     }
 
+    /// Whether the app gave a right sidebar.
+    #[must_use]
+    pub fn has_right_sidebar(&self) -> bool {
+        *self.right_given.read()
+    }
+
+    /// The right sidebar's state now.
+    #[must_use]
+    pub fn right_sidebar_state(&self) -> RightSidebarState {
+        RightSidebarState {
+            open: *self.right_open.peek(),
+            width: *self.right_w.peek(),
+        }
+    }
+
+    /// Show, hide or resize the right sidebar, telling the app.
+    pub fn set_right_sidebar(&self, state: RightSidebarState) {
+        let width = state.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
+        let (mut open, mut w) = (self.right_open, self.right_w);
+        if *open.peek() != state.open {
+            open.set(state.open);
+        }
+        if (*w.peek() - width).abs() > f32::EPSILON {
+            w.set(width);
+        }
+        if let Some(f) = self.hooks.peek().on_right_sidebar {
+            f.call(RightSidebarState { width, ..state });
+        }
+    }
+
+    /// Put an item in a place of the top bar (in place of one with its
+    /// id) — [`super::bar`].
+    pub fn put_bar_item(&self, item: BarItem) {
+        let mut bar = self.bar;
+        bar.write().put(item);
+    }
+
+    /// Take an item out of the top bar.
+    pub fn remove_bar_item(&self, id: &str) {
+        let mut bar = self.bar;
+        if bar.peek().items_with_id(id) {
+            bar.write().remove(id);
+        }
+    }
+
+    /// Take over a span of the top bar.
+    pub fn fill_bar(&self, filler: BarFiller) {
+        let mut bar = self.bar;
+        bar.write().fill(filler);
+    }
+
+    /// Give back a span `owner` took over.
+    pub fn unfill_bar(&self, owner: &str, span: BarSpan) {
+        let mut bar = self.bar;
+        bar.write().unfill(owner, span);
+    }
+
     /// The kind a pane names, if the app registered it.
     #[must_use]
     pub fn kind(&self, id: &str) -> Option<TabKind> {
@@ -610,7 +688,11 @@ impl Shell {
         match keymap.0.command(chord) {
             // Without tabs, only the commands that are not about tabs.
             Some(command)
-                if tabs || matches!(command, Command::ToggleSidebar | Command::OpenPalette) =>
+                if tabs
+                    || matches!(
+                        command,
+                        Command::ToggleSidebar | Command::ToggleRightSidebar | Command::OpenPalette
+                    ) =>
             {
                 self.command(command);
                 true
@@ -679,6 +761,14 @@ impl Shell {
                 let mut sheets = self.sheets;
                 if let Some(e) = sheets.write().iter_mut().find(|e| e.id.0 == id) {
                     e.drag = dy;
+                }
+            }
+            Some(Gesture::RightSidebar { start, width }) if (at.0 - start.0).abs() >= DRAG_SLOP => {
+                let vw = self.viewport.peek().0;
+                let next = right_drag(width, narrow(at.0 - start.0), vw);
+                let mut w = self.right_w;
+                if (*w.peek() - next).abs() > f32::EPSILON {
+                    w.set(next);
                 }
             }
             Some(Gesture::Sidebar { start, width, rail })
@@ -755,6 +845,13 @@ impl Shell {
                 }
             }
             Gesture::Tab { .. } => {}
+            Gesture::RightSidebar { start, .. } => {
+                if (at.0 - start.0).abs() < DRAG_SLOP {
+                    return;
+                }
+                let now = self.right_sidebar_state();
+                self.set_right_sidebar(RightSidebarState { open: true, ..now });
+            }
             Gesture::Sidebar { start, .. } => {
                 // A press that did not move chooses nothing.
                 if (at.0 - start.0).abs() < DRAG_SLOP {
@@ -919,6 +1016,14 @@ pub fn AppShell(
     sidebar_state: Option<SidebarState>,
     /// Hears the sidebar shown, hidden or resized (to keep it).
     on_sidebar: Option<EventHandler<SidebarState>>,
+    /// The right sidebar's content (an inspector, Now Playing): docked at
+    /// the right under the top bar on a desktop, its toggle at the top
+    /// bar's right. None: no right sidebar and no toggle.
+    right_sidebar: Option<Element>,
+    /// The right sidebar's state to start with.
+    right_sidebar_state: Option<RightSidebarState>,
+    /// Hears the right sidebar shown, hidden or resized (to keep it).
+    on_right_sidebar: Option<EventHandler<RightSidebarState>>,
     /// The app's primary destinations: on a phone, the tab pill at the
     /// foot (on a desktop the sidebar holds them).
     #[props(default)]
@@ -946,6 +1051,7 @@ pub fn AppShell(
     let measured = use_signal(|| (0.0_f64, 0.0_f64));
     let mut form_sig = use_signal(|| form.unwrap_or(FormFactor::Desktop));
     let start = sidebar_state.unwrap_or_default();
+    let right_start = right_sidebar_state.unwrap_or_default();
     let hooks = use_hook(|| CopyValue::new(Hooks::default()));
     let mut hooks_w = hooks;
     *hooks_w.write() = Hooks {
@@ -953,6 +1059,7 @@ pub fn AppShell(
         on_command,
         on_new_tab,
         on_sidebar,
+        on_right_sidebar,
         palette,
         kinds,
         keymap,
@@ -972,6 +1079,10 @@ pub fn AppShell(
         sidebar_open: Signal::new(start.open),
         sidebar_w: Signal::new(start.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX)),
         sidebar_rail: Signal::new(start.rail),
+        right_given: Signal::new(right_sidebar.is_some()),
+        right_open: Signal::new(right_start.open),
+        right_w: Signal::new(right_start.width.clamp(SIDEBAR_MIN, SIDEBAR_MAX)),
+        bar: Signal::new(BarContributions::default()),
         section_open: Signal::new(std::collections::HashMap::new()),
         tip: Signal::new(None),
         origin: Signal::new((0.0, 0.0)),
@@ -1002,6 +1113,10 @@ pub fn AppShell(
     }
     if *given.peek() != sidebar.is_some() {
         given.set(sidebar.is_some());
+    }
+    let mut right_given = shell.right_given;
+    if *right_given.peek() != right_sidebar.is_some() {
+        right_given.set(right_sidebar.is_some());
     }
 
     // The other windows' changes, and what the platform did to pop-outs.
@@ -1078,11 +1193,12 @@ pub fn AppShell(
     let tabs_now = shell.tabs_shown();
     let switcher = *shell.switcher.read() && tabs_now;
     let docked = !phone && sidebar.is_some() && *shell.sidebar_open.read();
+    let right_docked = !phone && right_sidebar.is_some() && *shell.right_open.read();
     let rail = docked && shell.sidebar_folded();
     let drawer = phone && sidebar.is_some();
     let touch = if phone { " touch-action: pan-y;" } else { "" };
     let style = format!(
-        "{} position: relative; width: 100%; height: 100%; display: flex; flex-direction: row; \
+        "{} position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; \
          overflow: hidden; background-color: var(--as-bg); color: var(--as-text); \
          font-family: var(--as-font); font-size: var(--as-font-size); outline: none; \
          user-select: none; box-sizing: border-box;{touch}",
@@ -1150,59 +1266,64 @@ pub fn AppShell(
                 let p = event.client_coordinates();
                 shell.released((p.x, p.y));
             },
-            // At full width the sidebar runs the window's height, the lights
-            // at its top; folded to the rail it sits under the top bar,
-            // which runs across the window with the lights at its start.
-            if docked && !rail {
-                if let Some(content) = sidebar.clone() {
-                    DockedSidebar { content, rail: false }
-                }
-            }
+            // The top bar runs across the window (the window's controls, the
+            // two sidebar toggles, the places apps fill); under it the left
+            // sidebar, the frames and the right sidebar.
+            {top}
             div {
-                class: "as-main",
-                style: "position: relative; flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column;",
-                {top}
-                div {
-                    class: "as-middle",
-                    style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; flex-direction: row;",
-                if rail {
+                class: "as-middle",
+                style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; flex-direction: row;",
+                if docked {
                     if let Some(content) = sidebar.clone() {
-                        DockedSidebar { content, rail: true }
+                        DockedSidebar { content, rail }
                     }
                 }
+                // The frames: the app's content (one view, or with tabs on
+                // the stacks, splits and docks of the window's layout).
                 div {
-                    class: "as-body",
-                    style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; overflow: hidden;",
-                    if !tabs_now {
-                        if has_layout {
+                    class: "as-frames",
+                    style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; flex-direction: column;",
+                    div {
+                        class: "as-body",
+                        style: "position: relative; flex: 1 1 0px; min-height: 0; min-width: 0; display: flex; overflow: hidden;",
+                        if !tabs_now {
+                            if has_layout {
+                                SoloView { window: window_for_body.clone() }
+                            } else {
+                                div {
+                                    class: "as-content",
+                                    style: "flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;",
+                                    {children}
+                                }
+                            }
+                        } else if phone {
                             SoloView { window: window_for_body.clone() }
                         } else {
-                            div {
-                                class: "as-content",
-                                style: "flex: 1 1 0px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;",
-                                {children}
-                            }
+                            WindowBody { window: window_for_body.clone() }
                         }
-                    } else if phone {
-                        SoloView { window: window_for_body.clone() }
-                    } else {
-                        WindowBody { window: window_for_body.clone() }
+                        if in_page && tabs_now && !phone {
+                            InPageWindows {}
+                        }
                     }
-                    if in_page && tabs_now && !phone {
-                        InPageWindows {}
+                    if !phone {
+                        if let Some(acc) = accessory.clone() {
+                            DeskAccessory { accessory: acc }
+                        }
                     }
                 }
-                }
-                if phone {
-                    PhoneFoot {
-                        accessory: accessory.clone(),
-                        destinations: destinations.clone(),
-                        current: destination.clone(),
-                        on_destination,
-                        action: action.clone(),
+                if right_docked {
+                    if let Some(content) = right_sidebar.clone() {
+                        RightSidebar { content }
                     }
-                } else if let Some(acc) = accessory.clone() {
-                    DeskAccessory { accessory: acc }
+                }
+            }
+            if phone {
+                PhoneFoot {
+                    accessory: accessory.clone(),
+                    destinations: destinations.clone(),
+                    current: destination.clone(),
+                    on_destination,
+                    action: action.clone(),
                 }
             }
             if drawer {

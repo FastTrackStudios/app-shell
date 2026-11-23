@@ -45,6 +45,9 @@ pub enum Command {
     OpenSwitcher,
     /// Show or hide the sidebar (the UI's; the layout does not change).
     ToggleSidebar,
+    /// Show or hide the right sidebar (the UI's; the layout does not
+    /// change).
+    ToggleRightSidebar,
     /// Open the command palette (the UI's; the layout does not change).
     OpenPalette,
 }
@@ -77,6 +80,7 @@ impl Command {
             Self::ToggleDock(_) => "Toggle bottom dock".into(),
             Self::OpenSwitcher => "Show all tabs".into(),
             Self::ToggleSidebar => "Toggle sidebar".into(),
+            Self::ToggleRightSidebar => "Toggle right sidebar".into(),
             Self::OpenPalette => "Open anything".into(),
         }
     }
@@ -100,7 +104,10 @@ impl Workspace {
         let before = self.clone();
         let active = self.active.clone();
         match command {
-            Command::OpenSwitcher | Command::ToggleSidebar | Command::OpenPalette => {
+            Command::OpenSwitcher
+            | Command::ToggleSidebar
+            | Command::ToggleRightSidebar
+            | Command::OpenPalette => {
                 return Ok(Ran::Ui);
             }
             Command::CloseTab => {
@@ -291,6 +298,7 @@ pub trait Keymap {
 /// | Mod+Shift+Enter | zoom the stack |
 /// | Mod+Shift+E | show all tabs (the switcher) |
 /// | Mod+Shift+L | show or hide the sidebar |
+/// | Mod+Alt+B | show or hide the right sidebar |
 /// | Mod+K | open anything (the command palette) |
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DefaultKeymap;
@@ -304,6 +312,7 @@ impl Keymap for DefaultKeymap {
                 "ArrowRight" => Some(Command::Focus(Direction::Right)),
                 "ArrowUp" => Some(Command::Focus(Direction::Up)),
                 "ArrowDown" => Some(Command::Focus(Direction::Down)),
+                "b" if !c.shift => Some(Command::ToggleRightSidebar),
                 _ => None,
             };
         }

@@ -7,9 +7,10 @@
 use std::cell::RefCell;
 
 use app_shell::ui::{
-    AppShell, FormFactor, SHELL_CSS, ScrollArea, SearchField, Sidebar, SidebarItem, SidebarMode,
-    SidebarSection, SidebarState, SidebarSwitcher, TabCtx, TabKind, TabKinds, Tabs, ToolbarButton,
-    ToolbarGroup, TopBar, WindowControls, icons, use_shell, use_sidebar_mode,
+    AppShell, BarPlace, BarSpan, FormFactor, RightSidebarState, SHELL_CSS, ScrollArea, SearchField,
+    Sidebar, SidebarItem, SidebarMode, SidebarSection, SidebarState, SidebarSwitcher, TabCtx,
+    TabKind, TabKinds, Tabs, ToolbarButton, ToolbarGroup, TopBar, WindowControls, icons, use_shell,
+    use_sidebar_mode, use_top_bar_item, use_top_bar_span,
 };
 use app_shell::{Command, Pane, PaneId, Rect, Side, Target, WindowId, Workspace};
 use dioxus::prelude::*;
@@ -417,7 +418,7 @@ fn where_the_system_draws_the_lights_the_shell_keeps_their_room() {
 }
 
 #[test]
-fn a_sidebar_docks_at_the_left_with_the_lights_at_its_top() {
+fn the_top_bar_runs_across_with_the_lights_and_the_sidebar_docks_under_it() {
     let html = render_framed(true, None, true);
     assert!(html.contains("data-sidebar=\"docked\""));
     assert!(html.contains("width: 220px;"));
@@ -425,8 +426,8 @@ fn a_sidebar_docks_at_the_left_with_the_lights_at_its_top() {
     let lights_at = html.find("class=\"as-lights\"").unwrap();
     let bar_at = html.find("class=\"as-topbar\"").unwrap();
     assert!(
-        sidebar_at < lights_at && lights_at < bar_at,
-        "the lights in the sidebar, not the bar"
+        bar_at < lights_at && lights_at < sidebar_at,
+        "the lights in the bar, the sidebar under it"
     );
     assert_eq!(html.matches("class=\"as-lights\"").count(), 1);
     assert!(html.contains("text-transform: uppercase") && html.contains(">Library</span>"));
@@ -874,4 +875,116 @@ fn a_declared_sheet_opens_while_its_flag_is_set() {
     };
     assert!(render(true).contains(">Inspector</span>"));
     assert!(!render(false).contains("Inspector"));
+}
+
+#[component]
+fn Contributes(middle: bool) -> Element {
+    use_top_bar_item("app/sync", BarPlace::Trailing, 0, || {
+        rsx! { span { class: "sync-item", "Synced" } }
+    });
+    use_top_bar_item("app/crumb", BarPlace::Leading, 0, || {
+        rsx! { span { class: "crumb-item", "Set 3" } }
+    });
+    if middle {
+        use_top_bar_span("app/tabs", BarSpan::Middle, || {
+            rsx! { span { class: "song-tabs", "Song tabs" } }
+        });
+    }
+    rsx! { p { class: "page", "page" } }
+}
+
+#[test]
+fn a_page_puts_items_in_the_bars_places_and_can_take_over_its_middle() {
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Notes", form: FormFactor::Desktop,
+                top_bar: rsx! { TopBar { title: "Notes", actions: rsx! { span { class: "app-action", "A" } } } },
+                Contributes { middle: false }
+            }
+        }
+    });
+    let (title, crumb) = (
+        html.find(">Notes</span>").unwrap(),
+        html.find("crumb-item").unwrap(),
+    );
+    let (sync, action) = (
+        html.find("sync-item").unwrap(),
+        html.find("app-action").unwrap(),
+    );
+    assert!(title < crumb, "leading items after the title");
+    assert!(
+        crumb < sync && sync < action,
+        "trailing items before the app's actions"
+    );
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Notes", form: FormFactor::Desktop,
+                top_bar: rsx! { TopBar { title: "Notes", actions: rsx! { span { class: "app-action", "A" } } } },
+                Contributes { middle: true }
+            }
+        }
+    });
+    assert!(html.contains("song-tabs"));
+    assert!(
+        !html.contains(">Notes</span>")
+            && !html.contains("sync-item")
+            && !html.contains("app-action"),
+        "the middle filler stands for the title, the center and the trailing items"
+    );
+    assert!(
+        html.contains("class=\"as-topbar\""),
+        "the bar is still the shell's"
+    );
+}
+
+#[test]
+fn a_right_sidebar_docks_at_the_right_with_its_toggle_at_the_bars_end() {
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Notes", form: FormFactor::Desktop,
+                right_sidebar: rsx! { div { class: "inspector", "Inspector" } },
+                p { class: "page", "page" }
+            }
+        }
+    });
+    let (page, right) = (
+        html.find("class=\"page\"").unwrap(),
+        html.find("inspector").unwrap(),
+    );
+    assert!(page < right, "the right sidebar after the frames");
+    assert!(html.contains("data-sidebar=\"right\"") && html.contains("width: 280px;"));
+    assert!(html.contains("aria-label=\"Hide the right sidebar\""));
+    let html = render_app(|| {
+        rsx! {
+            AppShell { title: "Notes", form: FormFactor::Desktop,
+                right_sidebar: rsx! { div { class: "inspector", "Inspector" } },
+                right_sidebar_state: RightSidebarState { open: false, width: 300.0 },
+                p { class: "page", "page" }
+            }
+        }
+    });
+    assert!(!html.contains("inspector") && html.contains("aria-label=\"Show the right sidebar\""));
+    let html = render_app(
+        || rsx! { AppShell { title: "Notes", form: FormFactor::Desktop, p { "page" } } },
+    );
+    assert!(
+        !html.contains("right sidebar"),
+        "no right sidebar, no toggle"
+    );
+}
+
+#[test]
+fn mod_alt_b_toggles_the_right_sidebar() {
+    use app_shell::{DefaultKeymap, KeyChord, Keymap};
+    let chord = KeyChord {
+        key: "b".into(),
+        ctrl: true,
+        shift: false,
+        alt: true,
+        meta: false,
+    };
+    assert_eq!(
+        DefaultKeymap.command(&chord),
+        Some(Command::ToggleRightSidebar)
+    );
 }
