@@ -175,6 +175,77 @@ impl Settings {
     }
 }
 
+/// A derived section's typed value ([`use_section_settings`]): `value`
+/// redraws what reads it, `update` stores each field that changed in its
+/// scope.
+pub struct SectionSettings<T: 'static> {
+    pub settings: Settings,
+    pub value: Memo<T>,
+}
+
+impl<T> Clone for SectionSettings<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for SectionSettings<T> {}
+
+impl<T> PartialEq for SectionSettings<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.settings == other.settings && self.value == other.value
+    }
+}
+
+impl<T: architect_settings::Settings + PartialEq> SectionSettings<T> {
+    /// The value now (and redraws the reader when it changes).
+    #[must_use]
+    pub fn read(&self) -> T {
+        self.value.read().clone()
+    }
+
+    /// The value now, without subscribing.
+    #[must_use]
+    pub fn peek(&self) -> T {
+        self.value.peek().clone()
+    }
+
+    /// Changes the value (`update(|s| s.compact = true)`): each field that
+    /// changed is set in its scope; one the org locked, or a value its
+    /// setting refuses, is let go.
+    pub fn update(&self, f: impl FnOnce(&mut T)) {
+        let before = self.value.peek().clone();
+        let mut after = before.clone();
+        f(&mut after);
+        let old = before.entries();
+        for (key, v) in after.entries() {
+            if !old.iter().any(|(k, o)| *k == key && *o == v) {
+                self.settings.set(&key, v);
+            }
+        }
+    }
+}
+
+/// Section `T`'s value, typed (`use_section_settings::<Audio>()`), over
+/// the app's settings ([`use_settings`]); its section registered when it
+/// is not yet. Under no settings of the app's the value is the calling
+/// component's own: the defaults, changed in memory, kept nowhere.
+#[must_use]
+pub fn use_section_settings<T: architect_settings::Settings + PartialEq>() -> SectionSettings<T> {
+    let outer = try_use_settings();
+    let settings = use_hook(move || {
+        let s =
+            outer.unwrap_or_else(|| Settings::detached(Registry::new(), ScopedValues::new(), None));
+        if s.registry.peek().section(T::id()).is_none() {
+            let mut registry = s.registry;
+            let _ = registry.write().register(T::section());
+        }
+        s
+    });
+    let value = use_memo(move || T::read(&settings.registry.read(), &settings.values.read()));
+    SectionSettings { settings, value }
+}
+
 /// Draws a section of the settings page from a view: an extension's
 /// section (`[[sections]] view`), by its kind (`<extension>/<view>`).
 /// `None` when it cannot. `use_extension_ui` provides it.

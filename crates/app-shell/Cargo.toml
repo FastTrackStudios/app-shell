@@ -9,7 +9,7 @@ repository.workspace = true
 [features]
 default = ["ui"]
 # The Dioxus components. Without it: the model only (no Dioxus at all).
-ui = ["dep:dioxus", "dep:futures-channel", "dep:futures-util", "dep:futures-timer", "dep:tracing"]
+ui = ["dep:dioxus", "dep:futures-channel", "dep:futures-util", "dep:futures-timer", "dep:tracing", "dep:web-time"]
 # Every Lucide icon by its name (`ui::named_icon`), as path data generated
 # by scripts/lucide.py: a big table, so off unless an app draws icons named
 # by data (a manifest, a layout file).
@@ -24,6 +24,8 @@ futures-util = { version = "0.3", default-features = false, optional = true }
 tracing = { workspace = true, optional = true }
 # A toast goes after its time (a browser's timer on wasm).
 futures-timer = { version = "3", optional = true }
+# The motion clock (`ui::motion::now`): `Instant` in a browser too.
+web-time = { version = "1", optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -491,6 +491,13 @@ fn ActionList(items: Vec<MenuItem>) -> Element {
             for (i, item) in items.into_iter().enumerate() {
                 if item.action.is_none() && item.label.is_empty() {
                     div { key: "{i}", style: "height: 1px; margin: 4px 8px; background-color: var(--as-border);" }
+                } else if item.is_text() {
+                    {
+                        let (size, color) = if item.heading { ("12px", "var(--as-heading)") } else { ("15px", "var(--as-muted)") };
+                        rsx! {
+                            div { key: "{i}", style: "padding: 10px 12px 4px; font-size: {size}; color: {color}; white-space: nowrap; overflow: hidden;", "{item.label}" }
+                        }
+                    }
                 } else {
                     {
                         let action = item.action.clone();
@@ -509,6 +516,9 @@ fn ActionList(items: Vec<MenuItem>) -> Element {
                                     if let Some(icon) = item.icon { IconView { icon, size: 20.0 } }
                                 }
                                 span { style: "flex: 1 1 0px; min-width: 0; white-space: nowrap; overflow: hidden;", "{item.label}" }
+                                if item.checked == Some(true) {
+                                    IconView { icon: super::icons::CHECK, size: 18.0 }
+                                }
                             }
                         }
                     }

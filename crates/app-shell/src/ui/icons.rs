@@ -82,6 +82,7 @@ pub fn IconView(icon: Icon, #[props(default = 14.0)] size: f32, color: Option<St
     }
 }
 
+pub const CHECK: Icon = Icon(&["M20 6 9 17l-5-5"]);
 pub const CHEVRON_DOWN: Icon = Icon(&["m6 9 6 6 6-6"]);
 pub const CHEVRON_RIGHT: Icon = Icon(&["m9 18 6-6-6-6"]);
 pub const CHEVRONS_UP_DOWN: Icon = Icon(&["m7 15 5 5 5-5", "m7 9 5-5 5 5"]);
@@ -158,6 +159,7 @@ pub fn named(name: &str) -> Option<Icon> {
         "panel-right" => PANEL_RIGHT,
         "panel-bottom" => PANEL_BOTTOM,
         "ellipsis" | "more" => MORE,
+        "check" => CHECK,
         "chevron-down" => CHEVRON_DOWN,
         "chevron-right" => CHEVRON_RIGHT,
         "chevrons-up-down" => CHEVRONS_UP_DOWN,

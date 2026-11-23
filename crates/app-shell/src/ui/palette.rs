@@ -20,7 +20,8 @@ use super::icons::{self, IconView};
 use super::overlay::PaletteItem;
 use super::shell::use_shell;
 use crate::palette::{
-    Engine, Item, OpenIn, OpenItem, Opener, Openers, Ranked, Recents, Source, rank,
+    Engine, FnSource, Item, OpenIn, OpenItem, Opener, Openers, Ranked, Ranking, Recents, Source,
+    rank,
 };
 
 /// What runs an item a source gave.
@@ -152,6 +153,66 @@ impl PaletteSources {
     pub fn touch(&self, id: &str) {
         self.inner.borrow_mut().recents.touch(id);
     }
+}
+
+/// A command a view puts on the palette while it is mounted
+/// ([`use_view_commands`]): its row and what it runs.
+#[derive(Clone)]
+pub struct ViewCommand {
+    pub item: Item,
+    pub run: Rc<dyn Fn()>,
+}
+
+impl ViewCommand {
+    /// `item` on the palette, running `run` when picked.
+    pub fn new(item: Item, run: impl Fn() + 'static) -> Self {
+        Self {
+            item,
+            run: Rc::new(run),
+        }
+    }
+}
+
+impl std::fmt::Debug for ViewCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ViewCommand")
+            .field("item", &self.item)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Puts a view's `commands` on the palette while the calling component
+/// is mounted: a source of its own (`id`, titled `title`), ranked as
+/// commands are. Each render hands it the commands as they are now (a
+/// toggle's tick, a command that cannot run now); unmounted, they go.
+/// Where no [`PaletteSources`] is in context, nothing.
+pub fn use_view_commands(id: &str, title: &str, commands: Vec<ViewCommand>) {
+    let sources = try_use_context::<PaletteSources>();
+    let own = use_hook(|| id.to_owned());
+    use_drop({
+        let sources = sources.clone();
+        let own = own.clone();
+        move || {
+            if let Some(s) = sources {
+                s.remove(&own);
+            }
+        }
+    });
+    let Some(sources) = sources else { return };
+    let items: Vec<Item> = commands
+        .iter()
+        .map(|c| c.item.clone().source(own.clone()))
+        .collect();
+    let runs: HashMap<String, Rc<dyn Fn()>> =
+        commands.into_iter().map(|c| (c.item.id, c.run)).collect();
+    sources.register(
+        FnSource::new(own, title, move |_| items.clone()).ranking(Ranking::Commands),
+        move |item| {
+            if let Some(run) = runs.get(&item.id) {
+                run();
+            }
+        },
+    );
 }
 
 /// One row of the palette.

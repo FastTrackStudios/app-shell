@@ -828,6 +828,73 @@ fn a_menu_is_an_action_sheet_on_a_phone_and_a_popup_on_a_desktop() {
 }
 
 #[test]
+fn a_menu_has_headings_notes_and_ticks() {
+    use app_shell::ui::MenuItem;
+    let items = || {
+        vec![
+            MenuItem::heading("Sort by"),
+            MenuItem::call("Name", Callback::new(|()| {})).checked(true),
+            MenuItem::call("Date", Callback::new(|()| {})).checked(false),
+            MenuItem::separator(),
+            MenuItem::note("Nothing else here"),
+        ]
+    };
+    let desk = render_sheets(FormFactor::Desktop, move |s| s.menu(10.0, 10.0, items()));
+    assert!(desk.contains("class=\"as-menu-heading\"") && desk.contains(">Sort by</div>"));
+    assert!(desk.contains("class=\"as-menu-note\"") && desk.contains(">Nothing else here</div>"));
+    // One tick, for the row that is on.
+    assert_eq!(desk.matches("M20 6 9 17l-5-5").count(), 1);
+    assert_eq!(desk.matches("role=\"menuitem\"").count(), 2, "text is not a row to press");
+    let phone = render_sheets(FormFactor::Phone, move |s| s.menu(10.0, 10.0, items()));
+    assert!(phone.contains(">Sort by</div>") && phone.contains(">Nothing else here</div>"));
+    assert_eq!(phone.matches("M20 6 9 17l-5-5").count(), 1);
+}
+
+#[derive(Clone, PartialEq, Props)]
+struct Commanding {
+    on: bool,
+}
+
+#[allow(non_snake_case)]
+fn ViewWithCommands(props: Commanding) -> Element {
+    let on = props.on;
+    app_shell::ui::use_view_commands(
+        "lab",
+        "Lab",
+        vec![app_shell::ui::ViewCommand::new(
+            app_shell::palette::Item::new("LAB_TOGGLE", "Toggle the lab").checked(on),
+            move || RAN.with(|r| *r.borrow_mut() += 1),
+        )],
+    );
+    rsx! { "view" }
+}
+
+thread_local! {
+    static RAN: RefCell<usize> = const { RefCell::new(0) };
+    static SOURCES: RefCell<Option<app_shell::ui::PaletteSources>> = const { RefCell::new(None) };
+}
+
+#[allow(non_snake_case)]
+fn CommandsApp() -> Element {
+    let sources = app_shell::ui::use_palette_sources();
+    SOURCES.with(|s| *s.borrow_mut() = Some(sources));
+    rsx! { ViewWithCommands { on: true } }
+}
+
+#[test]
+fn a_views_commands_are_on_the_palette_while_it_is_mounted() {
+    let mut dom = VirtualDom::new(CommandsApp);
+    dom.rebuild_in_place();
+    let sources = SOURCES.with(|s| s.borrow().clone()).unwrap();
+    let rows = dom.in_runtime(|| sources.search("toggle"));
+    let row = rows.first().expect("the view's command").item.clone();
+    assert_eq!((row.id.as_str(), row.source.as_str()), ("LAB_TOGGLE", "lab"));
+    assert_eq!(row.checked, Some(true));
+    dom.in_runtime(|| sources.run(&row));
+    assert_eq!(RAN.with(|r| *r.borrow()), 1);
+}
+
+#[test]
 fn the_palette_is_a_sheet_on_a_phone_and_near_the_top_on_a_desktop() {
     let phone = render_sheets(FormFactor::Phone, |s| s.open_palette());
     assert!(phone.contains("class=\"as-palette\"") && phone.contains("data-detent=\"large\""));

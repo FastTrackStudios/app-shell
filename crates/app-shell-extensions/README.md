@@ -38,6 +38,10 @@ frame renderer, what goes when an extension's session ends.
 
 ## The settings page
 
+A view reads its own derived section typed with
+`settings::use_section_settings::<T>()` (`read`, `update`), over the
+app's settings or, under none, its own defaults.
+
 `settings_sheet` is the settings extension (`SettingsSheet`, manifest
 `extensions/settings.toml`), moved from Architect's
 `architect-settings-sheet`: ⌘, (`APP_SETTINGS`, an app id the app allows

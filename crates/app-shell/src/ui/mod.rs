@@ -14,6 +14,7 @@ pub mod icons;
 mod kinds;
 #[cfg(feature = "icons")]
 mod lucide;
+pub mod motion;
 mod overlay;
 mod palette;
 mod popup;
@@ -42,8 +43,8 @@ pub use overlay::{
     PaletteItem, Sheet, SheetContent, SheetHandle, SheetId, SheetSpec, Swipeable, ToastSpec,
     use_sheet,
 };
-pub use palette::{PaletteSources, use_palette_sources};
-pub use popup::{MenuAction, MenuItem, Popup, PopupContent, PopupLayer};
+pub use palette::{PaletteSources, ViewCommand, use_palette_sources, use_view_commands};
+pub use popup::{MenuAction, MenuItem, Popup, PopupContent, PopupLayer, under};
 pub use shell::{
     AppShell, BoundKey, FormFactor, KeyRun, KeyScope, KeymapHandle, PaletteOverlay, SHELL_CSS,
     Shell, Tabs, use_shell, use_window_layout, window_title,
