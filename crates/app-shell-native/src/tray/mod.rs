@@ -320,6 +320,13 @@ pub fn run(app: TrayApp) {
         decorated: false,
         focus: RefCell::new(Vec::new()),
         sizes: RefCell::new(Vec::new()),
+        // A tray app has no control socket of its own (its windows come and
+        // go); one network provider for every window, as `launch` makes.
+        shots: Rc::new(RefCell::new(None)),
+        net: crate::net::AppNetProvider::shared(&proxy),
+        // The tray's id names its windows on Linux (a launcher and the
+        // compositor group them under it).
+        app_id: Some(app.id.clone()),
     });
     if let Some(spec) = app.start_window {
         tray.open_window(spec);
@@ -488,7 +495,7 @@ impl TrayLoop {
                 panel,
             },
         );
-        let doc = DioxusDocument::new(vdom, document_config());
+        let doc = DioxusDocument::new(vdom, document_config(&self.desk.net));
         let config = WindowConfig::with_attributes(
             Box::new(doc),
             DioxusNativeWindowRenderer::new(),
