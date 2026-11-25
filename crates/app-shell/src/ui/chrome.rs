@@ -311,7 +311,9 @@ pub fn TopBar(
         }
     };
     let filled = middle.is_some();
-    let columns = if filled {
+    // A filled middle or center takes the width the title and the trailing
+    // items leave; the search alone sits centred between equal sides.
+    let columns = if filled || center_fill.is_some() {
         "minmax(0, auto) minmax(0, 1fr) minmax(0, auto)"
     } else {
         "minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr)"
@@ -338,7 +340,7 @@ pub fn TopBar(
                     {(filler.render)()}
                 }
             } else if let Some(filler) = center_fill {
-                Slot { style: "min-width: 0; display: flex; align-items: center; padding: 0 12px;".to_owned(), {(filler.render)()} }
+                Slot { style: "min-width: 0; height: 100%; display: flex; align-items: center; padding: 0 12px;".to_owned(), {(filler.render)()} }
             } else if search.is_some() || !shell.bar.read().items(BarPlace::Center).is_empty() {
                 Slot {
                     style: "min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 12px;".to_owned(),
